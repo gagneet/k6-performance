@@ -11,7 +11,7 @@
  *   STRATA_BUILDING_ID  building partition key (default: 13195)
  */
 import http from 'k6/http';
-import { check, fail } from 'k6';
+import { check, fail, sleep } from 'k6';
 
 const BASE = __ENV.TARGET_URL || 'https://eastgateresidences.com.au/api';
 const EMAIL = __ENV.STRATA_EMAIL;
@@ -50,4 +50,10 @@ export default function () {
     'strata-roll 200': r => r.status === 200,
     'strata-roll non-empty': r => r.body.length > 10,
   });
+
+  // 4. Documents listing
+  const docsRes = http.get(`${BASE}/documents?building_id=${BUILDING_ID}&limit=5`, h);
+  check(docsRes, { 'documents 2xx': r => r.status < 300 });
+
+  sleep(1);
 }
