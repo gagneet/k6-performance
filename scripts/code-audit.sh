@@ -81,6 +81,29 @@ set -Eeuo pipefail
 #                      audit. Default: 0
 #   STATE_DIR          Where to store audit state. Default: <repo>/.code-audit
 #
+# v2 feature flags:
+#   DIFF_ONLY          If 1, audit only files changed vs BASE_REF. Falls back
+#                      to full scan on non-git repos. Default: 0
+#   BASE_REF           Reference point for DIFF_ONLY. Default: main
+#   COST_ESTIMATE      If 1 (default), print a rough token+cost estimate
+#                      before the audit starts. Uses PRICE_IN_PER_MTOK and
+#                      PRICE_OUT_PER_MTOK; these are NOT live prices — set
+#                      them to your provider's current rates for accuracy.
+#   CONFIRM_COST       If 1, require interactive y/N confirmation after the
+#                      cost estimate. Requires a TTY. Default: 0
+#   PRICE_IN_PER_MTOK  Dollars per million input tokens for the estimate.
+#                      Default: 15 (order-of-magnitude for Opus-tier)
+#   PRICE_OUT_PER_MTOK Dollars per million output tokens. Default: 75
+#   STATIC_ANALYSIS    If 1, run semgrep/ruff/bandit/shellcheck/eslint as
+#                      available and include output in iteration context.
+#                      Default: 0
+#   CHURN_SORT         If 1, order manifest by git churn so frequently-changed
+#                      files are audited first. Default: 0
+#   CHURN_DAYS         Look-back window in days for CHURN_SORT. Default: 90
+#   PROGRESS_JSON      If 1 (default), write $STATE_DIR/progress.json after
+#                      each iteration. Portal UIs can poll it for a progress
+#                      bar. Default: 1
+#
 # Output structure (all under STATE_DIR):
 #   PROMPT.md          The system prompt sent to the AI (auto-seeded, editable)
 #   PREFLIGHT.md       Repo-shape safety review with paths worth checking
@@ -91,9 +114,15 @@ set -Eeuo pipefail
 #   tree.txt           Repo file tree (included as context)
 #   git.txt            Git status + recent log
 #   verify.txt         Output of VERIFY_CMD
+#   static.txt         (v2) Output of STATIC_ANALYSIS=1
 #   findings.md        Accumulated raw findings from all iterations
 #   iterations/        Per-iteration AI responses (iteration-001.md, etc.)
 #   FINAL_REPORT.md    Deduplicated final audit report (generated last)
+#   FINAL_REPORT.json  (v2) Same findings in structured JSON — consumed by
+#                      findings_parser.py without regex on AI markdown
+#   findings.json      (v2) All iteration findings merged as JSON
+#   metrics.json       (v2) Summary counts for InfluxDB/Grafana push
+#   progress.json      (v2) Live progress for portal UI polling
 #
 # Notes:
 #   - This script never edits your code, but it does stream included files to
@@ -131,6 +160,34 @@ EXTRA_EXCLUDES="${EXTRA_EXCLUDES:-}"
 PREVIEW_ONLY="${PREVIEW_ONLY:-0}"
 RUN_PREFLIGHT_AI="${RUN_PREFLIGHT_AI:-0}"
 
+# ── v2 additions ─────────────────────────────────────────────────────────────
+# Diff-only: scan only files changed relative to BASE_REF. Great for PR audits.
+DIFF_ONLY="${DIFF_ONLY:-0}"
+BASE_REF="${BASE_REF:-main}"
+
+# Cost estimation: print rough token/cost estimate before the audit starts.
+# CONFIRM_COST=1 additionally requires interactive Y/N (skip for CI).
+COST_ESTIMATE="${COST_ESTIMATE:-1}"
+CONFIRM_COST="${CONFIRM_COST:-0}"
+# Rough per-MTok prices used for the estimate. These are user-overridable
+# because prices shift — the script never claims they're current. Defaults
+# are order-of-magnitude values for awareness, not billing accuracy.
+PRICE_IN_PER_MTOK="${PRICE_IN_PER_MTOK:-15}"
+PRICE_OUT_PER_MTOK="${PRICE_OUT_PER_MTOK:-75}"
+
+# Static analysis pre-pass: if tools are on PATH, include their output in
+# every iteration's context. Opt-in — scans add wallclock time.
+STATIC_ANALYSIS="${STATIC_ANALYSIS:-0}"
+
+# Churn sort: prioritize files with recent git activity. Files changed most
+# in the last CHURN_DAYS go first in the manifest.
+CHURN_SORT="${CHURN_SORT:-0}"
+CHURN_DAYS="${CHURN_DAYS:-90}"
+
+# Progress JSON: write $STATE_DIR/progress.json after each iteration so the
+# portal UI can show a progress bar without scraping logs.
+PROGRESS_JSON="${PROGRESS_JSON:-1}"
+
 STATE_DIR="${STATE_DIR:-$ROOT/.code-audit}"
 ITER_DIR="$STATE_DIR/iterations"
 PROMPT_FILE="$STATE_DIR/PROMPT.md"
@@ -147,6 +204,13 @@ FINAL_REPORT="$STATE_DIR/FINAL_REPORT.md"
 INPUT_FILE="$STATE_DIR/input.md"
 BATCH_FILE="$STATE_DIR/batch.txt"
 LOG_FILE="$STATE_DIR/code-audit.log"
+
+# v2 output files
+STATIC_FILE="$STATE_DIR/static.txt"
+PROGRESS_FILE="$STATE_DIR/progress.json"
+METRICS_FILE="$STATE_DIR/metrics.json"
+FINDINGS_JSON="$STATE_DIR/findings.json"
+FINAL_REPORT_JSON="$STATE_DIR/FINAL_REPORT.json"
 
 mkdir -p "$STATE_DIR" "$ITER_DIR"
 touch "$REVIEWED" "$MASTER_FINDINGS"
@@ -189,8 +253,15 @@ validate_settings() {
   validate_positive_int TAIL_LINES
   validate_positive_int RECENT_FINDINGS_CHARS
   validate_positive_int AI_RETRIES
+  validate_positive_int CHURN_DAYS
   validate_bool PREVIEW_ONLY
   validate_bool RUN_PREFLIGHT_AI
+  validate_bool DIFF_ONLY
+  validate_bool COST_ESTIMATE
+  validate_bool CONFIRM_COST
+  validate_bool STATIC_ANALYSIS
+  validate_bool CHURN_SORT
+  validate_bool PROGRESS_JSON
 }
 
 seed_prompt() {
@@ -385,7 +456,7 @@ write_preflight_files() {
   done < "$MANIFEST"
 
   {
-    echo "# code Audit Preflight"
+    echo "# Ralph Audit Preflight"
     echo
     echo "Generated before any VERIFY_CMD or AI_CMD execution."
     echo
@@ -592,6 +663,13 @@ build_iteration_input() {
     echo
     cat "$VERIFY_FILE"
     echo
+    # v2: optional static-analysis output as additional context
+    if [[ -s "$STATIC_FILE" ]]; then
+      echo "# Static Analysis (tool findings — use as hints, verify in source)"
+      echo
+      cat "$STATIC_FILE"
+      echo
+    fi
     echo "# Recent Findings"
     echo
     if [[ -s "$MASTER_FINDINGS" ]]; then
@@ -759,10 +837,463 @@ final_synthesis() {
   fi
 }
 
+# ═══════════════════════════════════════════════════════════════════════════
+# v2 feature functions
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ── Feature 2: diff-only mode ───────────────────────────────────────────────
+# Replaces the full manifest with just files changed vs BASE_REF. Silently
+# falls back to full scan on non-git repos or if git fails.
+apply_diff_only() {
+  [[ "$DIFF_ONLY" -ne 1 ]] && return 0
+
+  if ! git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+    log "DIFF_ONLY=1 but $ROOT is not a git repo; falling back to full scan"
+    return 0
+  fi
+
+  # merge-base ... syntax finds the point where BASE_REF diverged from HEAD,
+  # then lists files changed on HEAD since then — the standard "PR" diff.
+  local tmp="$STATE_DIR/manifest.diff.tmp"
+  if ! git -C "$ROOT" diff --name-only --diff-filter=ACMR "${BASE_REF}...HEAD" > "$tmp" 2>/dev/null; then
+    log "git diff vs $BASE_REF failed; falling back to full scan"
+    rm -f "$tmp"
+    return 0
+  fi
+
+  # Filter the diff list through our own exclusion rules + source/config test.
+  # This way DIFF_ONLY respects EXTRA_EXCLUDES exactly like a full scan.
+  local filtered="$STATE_DIR/manifest.diff.filtered"
+  : > "$filtered"
+  while IFS= read -r rel; do
+    [[ -z "$rel" ]] && continue
+    [[ ! -f "$ROOT/$rel" ]] && continue   # deleted/renamed files won't exist
+    if is_excluded_path "$rel"; then
+      continue
+    fi
+    if is_source_or_config "$rel"; then
+      printf '%s\n' "$rel" >> "$filtered"
+    fi
+  done < "$tmp"
+
+  local diff_count
+  diff_count="$(wc -l < "$filtered" | tr -d ' ')"
+  if (( diff_count == 0 )); then
+    log "DIFF_ONLY=1: no source/config files changed vs $BASE_REF; nothing to audit"
+    # Preserve a marker so main() can bail cleanly
+    : > "$MANIFEST"
+    rm -f "$tmp" "$filtered"
+    return 0
+  fi
+
+  # Replace manifest with just the diff
+  sort -u "$filtered" > "$MANIFEST"
+  rm -f "$tmp" "$filtered"
+  log "DIFF_ONLY=1: scanning $diff_count file(s) changed vs $BASE_REF"
+}
+
+# ── Feature 5: churn-based sort ─────────────────────────────────────────────
+# Re-sorts $MANIFEST so the most-frequently-changed files come first. If the
+# audit hits MAX_ITERATIONS mid-run, the most relevant code got reviewed.
+apply_churn_sort() {
+  [[ "$CHURN_SORT" -ne 1 ]] && return 0
+
+  if ! git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+    log "CHURN_SORT=1 but $ROOT is not a git repo; keeping alphabetical order"
+    return 0
+  fi
+
+  local since="${CHURN_DAYS}.days.ago"
+  local churn_file="$STATE_DIR/churn.txt"
+
+  # "git log --name-only --since=..." lists files touched in each commit in
+  # the window. sort | uniq -c | sort -rn gives: "<count> <file>" descending.
+  # We then map manifest entries to their churn count, sorting manifest by
+  # that count (keeping unseen files at churn=0, ordered alphabetically).
+  if ! git -C "$ROOT" log --since="$since" --name-only --pretty=format: 2>/dev/null \
+      | awk 'NF' | sort | uniq -c | sort -rn > "$churn_file"; then
+    log "CHURN_SORT: git log failed; keeping alphabetical order"
+    rm -f "$churn_file"
+    return 0
+  fi
+
+  # Build: "<count> <file>" lookup, then re-score the manifest.
+  local scored="$STATE_DIR/manifest.scored"
+  awk -v churn="$churn_file" '
+    BEGIN {
+      while ((getline line < churn) > 0) {
+        # "  <count> <path>" — skip leading whitespace, split on first space
+        sub(/^[ \t]+/, "", line)
+        n = index(line, " ")
+        if (n > 0) {
+          c = substr(line, 1, n - 1) + 0
+          p = substr(line, n + 1)
+          score[p] = c
+        }
+      }
+      close(churn)
+    }
+    { s = (score[$0] ? score[$0] : 0); printf "%010d\t%s\n", s, $0 }
+  ' "$MANIFEST" > "$scored"
+
+  # sort -r on the zero-padded count column gives hottest files first; -s
+  # keeps alphabetical order within same count (stable-ish behavior).
+  sort -k1,1r -k2,2 "$scored" | cut -f2 > "$MANIFEST"
+  rm -f "$scored" "$churn_file"
+  log "CHURN_SORT=1: manifest re-sorted by git churn over last $CHURN_DAYS days"
+}
+
+# ── Feature 3: cost estimation ──────────────────────────────────────────────
+# Rough pre-flight: how many tokens will this audit approximately send, and
+# what's the order-of-magnitude spend? This is intentionally imprecise. The
+# script warns, it doesn't promise.
+estimate_cost() {
+  [[ "$COST_ESTIMATE" -ne 1 ]] && return 0
+
+  local total_bytes=0
+  local file_count=0
+  while IFS= read -r rel; do
+    [[ -z "$rel" ]] && continue
+    if [[ -f "$ROOT/$rel" ]]; then
+      local sz
+      sz="$(wc -c < "$ROOT/$rel" 2>/dev/null | tr -d ' ' || echo 0)"
+      # File truncation cap — same logic MAX_FILE_BYTES enforces at render time
+      if (( sz > MAX_FILE_BYTES )); then
+        sz="$MAX_FILE_BYTES"
+      fi
+      total_bytes=$((total_bytes + sz))
+      file_count=$((file_count + 1))
+    fi
+  done < "$MANIFEST"
+
+  # Token heuristic: ~4 bytes per token on English-ish text. Off by 2x for
+  # dense code but this is an awareness number, not a bill.
+  local input_tokens=$((total_bytes / 4))
+
+  # Each iteration's prompt also includes tree + git + verify + recent
+  # findings context (~8KB overhead), AI responses ~2KB average → output
+  # tokens scale with iteration count, not batch bytes.
+  local iterations=$(( (total_bytes / MAX_BATCH_BYTES) + 1 ))
+  local context_overhead=$(( iterations * 2000 ))  # per-iter context tokens
+  local output_tokens=$(( iterations * 800 ))       # per-iter response
+
+  local total_in=$(( input_tokens + context_overhead ))
+
+  # Rough dollar estimate. Division by 1000000 using bash arithmetic loses
+  # precision — do the math in cents then format.
+  local cents_in=$(( (total_in * PRICE_IN_PER_MTOK) / 10000 ))
+  local cents_out=$(( (output_tokens * PRICE_OUT_PER_MTOK) / 10000 ))
+  local cents_total=$(( cents_in + cents_out ))
+  local dollars=$(( cents_total / 100 ))
+  local dollar_cents=$(( cents_total % 100 ))
+
+  {
+    echo
+    echo "──── Cost estimate (rough, not a bill) ────"
+    printf "  files:        %d\n" "$file_count"
+    printf "  manifest:     %s bytes\n" "$total_bytes"
+    printf "  iterations:   ~%d\n" "$iterations"
+    printf "  input tokens: ~%d (incl. %d context overhead)\n" "$total_in" "$context_overhead"
+    printf "  output tokens:~%d\n" "$output_tokens"
+    printf "  est. cost:    \$%d.%02d  (at \$%d/MTok in, \$%d/MTok out)\n" \
+      "$dollars" "$dollar_cents" "$PRICE_IN_PER_MTOK" "$PRICE_OUT_PER_MTOK"
+    echo "  NOTE: assumes default Opus-tier pricing. Check your provider's"
+    echo "        current rates. Real spend varies with retries and context reuse."
+    echo "───────────────────────────────────────────"
+    echo
+  } | tee -a "$LOG_FILE" >&2
+
+  if [[ "$CONFIRM_COST" -eq 1 ]]; then
+    if [[ ! -t 0 ]]; then
+      log "CONFIRM_COST=1 but stdin is not a TTY; aborting for safety"
+      exit 1
+    fi
+    read -rp "Proceed with audit? [y/N] " reply
+    case "$reply" in
+      y|Y|yes|YES) ;;
+      *) log "Aborted by user at cost confirmation"; exit 1 ;;
+    esac
+  fi
+}
+
+# ── Feature 4: optional static analysis pre-pass ────────────────────────────
+# Runs whichever analyzers are on PATH. Output included in every iteration's
+# context so the AI gets more to work with. Additive, not a replacement.
+run_static_analysis() {
+  [[ "$STATIC_ANALYSIS" -ne 1 ]] && { : > "$STATIC_FILE"; return 0; }
+
+  {
+    echo "# Static Analysis Pre-Pass"
+    echo "# Run from: $ROOT"
+    echo
+
+    local ran_any=0
+
+    if command -v semgrep >/dev/null 2>&1; then
+      echo "## semgrep (auto-config)"
+      echo
+      (cd "$ROOT" && timeout 300 semgrep --config=auto --error --quiet --no-git-ignore 2>&1 | head -400) || true
+      echo
+      ran_any=1
+    fi
+
+    if command -v ruff >/dev/null 2>&1 && find "$ROOT" -name '*.py' -not -path '*/node_modules/*' -print -quit | grep -q .; then
+      echo "## ruff check"
+      echo
+      (cd "$ROOT" && timeout 60 ruff check . 2>&1 | head -200) || true
+      echo
+      ran_any=1
+    fi
+
+    if command -v bandit >/dev/null 2>&1 && find "$ROOT" -name '*.py' -not -path '*/node_modules/*' -print -quit | grep -q .; then
+      echo "## bandit (python security)"
+      echo
+      (cd "$ROOT" && timeout 120 bandit -r . -ll -f txt 2>&1 | head -200) || true
+      echo
+      ran_any=1
+    fi
+
+    if command -v shellcheck >/dev/null 2>&1; then
+      local sh_files
+      sh_files="$(find "$ROOT" -name '*.sh' -not -path '*/.git/*' -not -path '*/node_modules/*' 2>/dev/null | head -50)"
+      if [[ -n "$sh_files" ]]; then
+        echo "## shellcheck"
+        echo
+        # shellcheck handles many files; cap output to 200 lines regardless
+        echo "$sh_files" | xargs -r timeout 60 shellcheck 2>&1 | head -200 || true
+        echo
+        ran_any=1
+      fi
+    fi
+
+    if command -v eslint >/dev/null 2>&1 && [[ -f "$ROOT/package.json" ]]; then
+      echo "## eslint"
+      echo
+      (cd "$ROOT" && timeout 120 eslint . 2>&1 | head -200) || true
+      echo
+      ran_any=1
+    fi
+
+    if (( ran_any == 0 )); then
+      echo "(no static analyzers found on PATH: tried semgrep, ruff, bandit, shellcheck, eslint)"
+    fi
+  } > "$STATIC_FILE" 2>&1 || true
+
+  local lines
+  lines="$(wc -l < "$STATIC_FILE" | tr -d ' ')"
+  log "Static analysis: wrote $lines lines to $STATIC_FILE"
+}
+
+# ── Feature 6: progress JSON after each iteration ───────────────────────────
+# Portal UI polls $PROGRESS_FILE for a progress bar. Also appended to per-run
+# log for forensic debugging.
+write_progress() {
+  [[ "$PROGRESS_JSON" -ne 1 ]] && return 0
+
+  local iteration="$1"
+  local total_files="$2"
+  local elapsed_s="$3"
+
+  local files_reviewed
+  files_reviewed="$(wc -l < "$REVIEWED" 2>/dev/null | tr -d ' ' || echo 0)"
+
+  # Count findings-so-far cheaply: grep the master findings for our bracket
+  # pattern. Matches findings_parser.py's _FINDING_RE (kept in sync manually).
+  local findings_so_far=0
+  if [[ -s "$MASTER_FINDINGS" ]]; then
+    findings_so_far="$(grep -cE '^\s*[-*]\s*\[\s*severity' "$MASTER_FINDINGS" 2>/dev/null || echo 0)"
+  fi
+
+  local pct=0
+  if (( total_files > 0 )); then
+    pct=$(( files_reviewed * 100 / total_files ))
+  fi
+
+  # Write atomically via temp+rename so UI never reads a half-written JSON.
+  local tmp="$PROGRESS_FILE.tmp"
+  cat > "$tmp" <<EOF
+{
+  "iteration": $iteration,
+  "files_reviewed": $files_reviewed,
+  "files_total": $total_files,
+  "percent": $pct,
+  "findings_so_far": $findings_so_far,
+  "elapsed_s": $elapsed_s,
+  "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+EOF
+  mv "$tmp" "$PROGRESS_FILE"
+}
+
+# ── Feature 1: structured findings extractor ────────────────────────────────
+# Parses iteration files + FINAL_REPORT.md into findings.json. Uses the same
+# regex findings_parser.py uses, so Python and bash parsers stay in lockstep.
+# This is NOT a second AI call — it's pure text extraction.
+extract_findings_json() {
+  # Works against any file containing markdown bullets matching:
+  #   - [severity: X] [type: Y] path:lines — message. Confidence: Z
+  # Emits a JSON array of objects. No jq dependency — we escape manually.
+
+  local src="$1"
+  local out="$2"
+
+  if [[ ! -s "$src" ]]; then
+    echo '[]' > "$out"
+    return 0
+  fi
+
+  awk -v OUT="$out" '
+    function json_escape(s,    r) {
+      r = s
+      gsub(/\\/, "\\\\", r)
+      gsub(/"/,  "\\\"", r)
+      gsub(/\t/, "\\t",  r)
+      gsub(/\r/, "",     r)
+      gsub(/\n/, "\\n",  r)
+      # Strip other control chars that would make invalid JSON
+      gsub(/[\001-\010\013\014\016-\037]/, "", r)
+      return r
+    }
+    function extract_path(body,   m, path, lines) {
+      # Match first "path[.ext][:lines]" token
+      if (match(body, /[A-Za-z0-9_./-]+\.[A-Za-z0-9]+(:[0-9]+(-[0-9]+)?)?/)) {
+        tok = substr(body, RSTART, RLENGTH)
+        colon = index(tok, ":")
+        if (colon > 0) {
+          PATH = substr(tok, 1, colon - 1)
+          LINES = substr(tok, colon + 1)
+        } else {
+          PATH = tok
+          LINES = ""
+        }
+        return 1
+      }
+      PATH = ""; LINES = ""
+      return 0
+    }
+    function extract_conf(body,    m) {
+      CONF = "medium"
+      if (match(body, /[Cc]onfidence[[:space:]]*[:=][[:space:]]*(high|medium|low)/)) {
+        tok = substr(body, RSTART, RLENGTH)
+        sub(/.*[:=][[:space:]]*/, "", tok)
+        CONF = tolower(tok)
+      }
+    }
+    BEGIN {
+      print "[" > OUT
+      first = 1
+      section = ""
+    }
+    /^## / {
+      section = $0
+      sub(/^## /, "", section)
+      next
+    }
+    # Match the structured finding line
+    /^[[:space:]]*[-*][[:space:]]*\[[[:space:]]*severity[[:space:]]*[:=]/ {
+      line = $0
+      # Extract severity + type via sequential matches
+      if (!match(line, /\[[[:space:]]*severity[[:space:]]*[:=][[:space:]]*[a-z-]+[[:space:]]*\]/)) next
+      sev_tok = substr(line, RSTART, RLENGTH)
+      sub(/.*[:=][[:space:]]*/, "", sev_tok); sub(/[[:space:]]*\].*/, "", sev_tok)
+      SEV = tolower(sev_tok)
+
+      rest = substr(line, RSTART + RLENGTH)
+      if (!match(rest, /\[[[:space:]]*type[[:space:]]*[:=][[:space:]]*[a-z-]+[[:space:]]*\]/)) next
+      typ_tok = substr(rest, RSTART, RLENGTH)
+      sub(/.*[:=][[:space:]]*/, "", typ_tok); sub(/[[:space:]]*\].*/, "", typ_tok)
+      TYP = tolower(typ_tok)
+
+      body = substr(rest, RSTART + RLENGTH)
+      sub(/^[[:space:]]+/, "", body)
+
+      extract_path(body)
+      extract_conf(body)
+
+      # Message: split on em-dash / en-dash / " - ", strip confidence tail
+      msg = body
+      if (match(msg, /[[:space:]]+[—–-]+[[:space:]]+/)) {
+        msg = substr(msg, RSTART + RLENGTH)
+      }
+      sub(/[[:space:]]*[Cc]onfidence[[:space:]]*[:=].*$/, "", msg)
+      sub(/[[:space:]]+$/, "", msg)
+
+      if (!first) print "," > OUT
+      first = 0
+      printf "{\"severity\":\"%s\",\"finding_type\":\"%s\",\"file\":\"%s\",\"line_range\":\"%s\",\"message\":\"%s\",\"confidence\":\"%s\",\"source_section\":\"%s\"}",
+        json_escape(SEV),
+        json_escape(TYP),
+        json_escape(PATH),
+        json_escape(LINES),
+        json_escape(msg),
+        json_escape(CONF),
+        json_escape(section) > OUT
+    }
+    END { print "" > OUT; print "]" > OUT }
+  ' "$src"
+}
+
+# ── Feature 1 (continued) + metrics emitter ─────────────────────────────────
+# Called at the end of main(). Writes:
+#   findings.json        — all iteration findings merged
+#   FINAL_REPORT.json    — findings from FINAL_REPORT.md only
+#   metrics.json         — summary counts suitable for InfluxDB push
+write_final_json() {
+  extract_findings_json "$MASTER_FINDINGS" "$FINDINGS_JSON"
+  extract_findings_json "$FINAL_REPORT" "$FINAL_REPORT_JSON"
+
+  # Counts from findings.json using grep patterns — cheap and portable.
+  # Each count MUST tolerate zero matches (grep exits 1) under set -o pipefail,
+  # so we wrap with `|| echo 0` before wc. Without this, an audit with no
+  # info-severity findings kills the script at the count step.
+  local total high medium low info
+  total="$( { grep -o '"severity":' "$FINDINGS_JSON" 2>/dev/null || true; } | wc -l | tr -d ' ')"
+  high="$( { grep -o '"severity":"high"' "$FINDINGS_JSON" 2>/dev/null || true; } | wc -l | tr -d ' ')"
+  medium="$( { grep -o '"severity":"medium"' "$FINDINGS_JSON" 2>/dev/null || true; } | wc -l | tr -d ' ')"
+  low="$( { grep -o '"severity":"low"' "$FINDINGS_JSON" 2>/dev/null || true; } | wc -l | tr -d ' ')"
+  info="$( { grep -o '"severity":"info"' "$FINDINGS_JSON" 2>/dev/null || true; } | wc -l | tr -d ' ')"
+
+  local files_scanned iterations_done
+  files_scanned="$(wc -l < "$MANIFEST" 2>/dev/null | tr -d ' ' || echo 0)"
+  iterations_done="$(find "$ITER_DIR" -name 'iteration-*.md' -not -empty 2>/dev/null | wc -l | tr -d ' ')"
+
+  local commit_sha="none"
+  if git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+    commit_sha="$(git -C "$ROOT" rev-parse --short=12 HEAD 2>/dev/null || echo none)"
+  fi
+
+  cat > "$METRICS_FILE" <<EOF
+{
+  "schema": "code-audit/v2",
+  "total": $total,
+  "high": $high,
+  "medium": $medium,
+  "low": $low,
+  "info": $info,
+  "files_scanned": $files_scanned,
+  "iterations": $iterations_done,
+  "diff_only": $DIFF_ONLY,
+  "static_analysis": $STATIC_ANALYSIS,
+  "commit_sha": "$commit_sha",
+  "generated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+EOF
+
+  log "Wrote $FINDINGS_JSON ($total findings)"
+  log "Wrote $FINAL_REPORT_JSON"
+  log "Wrote $METRICS_FILE (high=$high medium=$medium low=$low)"
+}
+
 main() {
   validate_settings
   seed_prompt
   build_manifest
+
+  # v2: diff-only filter + churn sort (order matters — diff first, then sort
+  # what's left so changed files still come in churn order)
+  apply_diff_only
+  apply_churn_sort
+
   build_tree
   capture_git_context
   write_preflight_files
@@ -771,6 +1302,12 @@ main() {
   total_files="$(wc -l < "$MANIFEST" | tr -d ' ')"
 
   if [[ "$total_files" -eq 0 ]]; then
+    if [[ "$DIFF_ONLY" -eq 1 ]]; then
+      log "DIFF_ONLY=1: no source/config files changed vs $BASE_REF. Exiting cleanly."
+      # Write empty metrics so the portal can render "no findings" instead of erroring
+      write_final_json
+      exit 0
+    fi
     log "No source/config files found."
     exit 1
   fi
@@ -783,8 +1320,13 @@ main() {
 
   if [[ "$PREVIEW_ONLY" -eq 1 ]]; then
     log "PREVIEW_ONLY=1, exiting before VERIFY_CMD or AI_CMD."
+    # Even in preview mode, cost estimate and metrics are useful
+    estimate_cost
     exit 0
   fi
+
+  # v2: cost estimate before committing to AI spend
+  estimate_cost
 
   if [[ "$RUN_PREFLIGHT_AI" -eq 1 ]]; then
     if ! run_preflight_ai; then
@@ -795,6 +1337,9 @@ main() {
 
   run_verify
 
+  # v2: optional static analysis pre-pass; output becomes iteration context
+  run_static_analysis
+
   # Determine starting iteration from existing completed iterations
   local iteration=0
   while [[ -s "$ITER_DIR/iteration-$(printf '%03d' "$((iteration + 1))").md" ]]; do
@@ -803,6 +1348,10 @@ main() {
   if (( iteration > 0 )); then
     log "Resuming after iteration $iteration ($iteration iterations already complete)"
   fi
+
+  # v2: track elapsed time for progress JSON
+  local t_start
+  t_start="$(date +%s)"
 
   while (( iteration < MAX_ITERATIONS )); do
     if ! select_batch; then
@@ -822,24 +1371,39 @@ main() {
       log "AI command failed on iteration $iteration. See: $out_file"
       # Remove partial output so resume retries this batch
       rm -f "$out_file"
+      # v2: still write progress + metrics so portal can display partial data
+      write_progress "$iteration" "$total_files" "$(( $(date +%s) - t_start ))"
+      write_final_json
       exit 1
     fi
 
     append_iteration_output "$iteration" "$out_file"
     mark_batch_reviewed
+
+    # v2: progress JSON for the portal UI
+    write_progress "$iteration" "$total_files" "$(( $(date +%s) - t_start ))"
   done
 
   if (( iteration >= MAX_ITERATIONS )); then
     log "Hit MAX_ITERATIONS before finishing review pass."
+    # v2: still emit structured output for partial data
+    write_final_json
     exit 1
   fi
 
   final_synthesis
 
+  # v2: final structured outputs — this is what findings_parser.py and
+  # influx_writer.py will read via the portal.
+  write_final_json
+
   log "Done."
-  log "Final report: $FINAL_REPORT"
-  log "Prompt file:   $PROMPT_FILE"
-  log "Findings log:  $MASTER_FINDINGS"
+  log "Final report:       $FINAL_REPORT"
+  log "Final JSON:         $FINAL_REPORT_JSON"
+  log "All findings JSON:  $FINDINGS_JSON"
+  log "Metrics (Grafana):  $METRICS_FILE"
+  log "Prompt file:        $PROMPT_FILE"
+  log "Findings log:       $MASTER_FINDINGS"
 }
 
 main "$@"
