@@ -377,10 +377,20 @@ def get_config():
 def list_scripts():
     if not SCRIPTS_DIR.exists():
         return []
-    return [
-        {"name": f.name, "size": f.stat().st_size}
-        for f in sorted(SCRIPTS_DIR.glob("*.js"))
-    ]
+    scripts = []
+    # Root-level .js and .ts scripts
+    for ext in ("*.js", "*.ts"):
+        for f in sorted(SCRIPTS_DIR.glob(ext)):
+            scripts.append({"name": f.name, "size": f.stat().st_size})
+    # One level of subdirectories (e.g. strata-management/ mounted at /scripts/strata-management)
+    for subdir in sorted(p for p in SCRIPTS_DIR.iterdir() if p.is_dir()):
+        for ext in ("*.js", "*.ts"):
+            for f in sorted(subdir.glob(ext)):
+                scripts.append({
+                    "name": str(f.relative_to(SCRIPTS_DIR)),
+                    "size": f.stat().st_size,
+                })
+    return scripts
 
 
 @app.post("/api/runs")
