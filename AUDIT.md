@@ -81,7 +81,7 @@ All schema changes are additive. Existing k6 run data is untouched.
 
 4. **Start an audit from the UI.**
    Open http://localhost:8000, click **Audit** in the nav, pick your target
-   from the dropdown, choose **Ralph** (fast, cheap) or **RepoLens** (deep,
+   from the dropdown, choose **Code Analysis** (fast, cheap) or **RepoLens** (deep,
    $$$), and hit **▶ Run Audit**. Output streams live in the terminal pane.
 
 5. **View findings.**
@@ -190,6 +190,8 @@ you don't miss them:
 
 - **Container hard timeout.** Every audit aborts after `AUDIT_MAX_SECONDS`
   (default 2 hours). Override per-environment via docker-compose.
+
+For complete CLI, UI, and API usage see **[USAGE.md](USAGE.md)**.
 
 ## API reference (audit endpoints)
 
