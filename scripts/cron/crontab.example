@@ -1,0 +1,26 @@
+# k6-performance — scheduled maintenance crontab entries
+#
+# To install: run `crontab -e` and paste the relevant blocks below.
+# Cron will email output to MAILTO when a job exits non-zero (updates found).
+# Set MAILTO to your address or leave blank to suppress email.
+#
+# Verify the project path matches your local checkout before installing.
+
+MAILTO=gagneet@gmail.com
+PROJECT=/home/gagneet/k6-performance
+
+# ── Monthly dependency update check ──────────────────────────────────────────
+# Runs at 08:00 on the 1st of every month.
+# Checks: RepoLens release, strata-management commits, k6-performance commits.
+# Exits 1 (triggers email) only when updates are found.
+# Logs written to: $PROJECT/logs/update-checks/YYYY-MM-DD.log
+
+# min  hour  dom  month  dow   command
+0      8     1    *      *     $PROJECT/scripts/cron/monthly-update-check.sh
+
+# ── Optional: auto-pull strata-management on the 1st ─────────────────────────
+# Uncomment if you want the mounted repo kept current automatically.
+# Safe because the container mounts it read-only (:ro), so no running audit
+# can be disrupted by an in-progress pull.
+#
+# 5    8     1    *      *     git -C /home/gagneet/strata-management pull --ff-only --quiet
