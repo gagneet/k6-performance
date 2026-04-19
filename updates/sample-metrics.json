@@ -1,0 +1,14 @@
+{
+  "schema": "code-audit/v2",
+  "total": 5,
+  "high": 2,
+  "medium": 2,
+  "low": 1,
+  "info": 0,
+  "files_scanned": 3,
+  "iterations": 1,
+  "diff_only": 0,
+  "static_analysis": 0,
+  "commit_sha": "90b06179ddf9",
+  "generated_at": "2026-04-19T06:17:20Z"
+}

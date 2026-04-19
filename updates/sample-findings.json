@@ -1,0 +1,7 @@
+[
+{"severity":"high","finding_type":"confirmed","file":"src/auth/jwt.py","line_range":"42","message":"JWT audience check is missing, allowing token reuse across tenants.","confidence":"high","source_section":"Priority Findings"},
+{"severity":"high","finding_type":"confirmed","file":"src/auth/jwt.py","line_range":"42-58","message":"Token expiry enforced on login but not on refresh.","confidence":"medium","source_section":"Priority Findings"},
+{"severity":"medium","finding_type":"likely-risk","file":"src/cache/redis_client.py","line_range":"88","message":"Cache eviction racing with session write.","confidence":"medium","source_section":"Priority Findings"},
+{"severity":"low","finding_type":"hypothesis","file":"src/utils/date.py","line_range":"","message":"Possible TZ bug on DST boundaries.","confidence":"low","source_section":"Priority Findings"},
+{"severity":"medium","finding_type":"architecture","file":"","line_range":"","message":"Inconsistent error-handling decorators across API handlers.","confidence":"high","source_section":"Cross-File Risks"}
+]
