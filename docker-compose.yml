@@ -74,7 +74,11 @@ services:
       - "8000:8000"
     volumes:
       - ./scripts:/scripts:ro
+      # strata-management perf scripts accessible as "strata-management/<name>" in the portal
+      - /home/gagneet/strata-management/tests/performance:/scripts/strata-management:ro
       - portal-data:/data
+      # strata-management source available as an audit target under /data/audits/repos/
+      - /home/gagneet/strata-management:/data/audits/repos/strata-management:ro
     networks:
       - k6net
     extra_hosts:
