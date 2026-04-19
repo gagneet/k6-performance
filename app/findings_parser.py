@@ -96,22 +96,37 @@ _CONFIDENCE_RE = re.compile(r"confidence\s*[:=]\s*(?P<conf>high|medium|low)", re
 
 def parse_code_state(state_dir: Path, audit_id: str) -> tuple[list[Finding], AuditSummary]:
     """
-    Main entry point for CodeAnalysis output. Reads FINAL_REPORT.md if present,
-    otherwise falls back to accumulating findings from iteration files.
+    Main entry point for CodeAnalysis output. Preference order:
+      1. v2 FINAL_REPORT.json  — structured, produced by awk extractor (parse_confidence=1.0)
+      2. v2 findings.json      — same schema, all iterations merged
+      3. v1 FINAL_REPORT.md    — regex over AI markdown (original path)
+      4. v1 findings.md        — regex fallback
     Always returns a (findings, summary) tuple — never raises.
     """
     state_dir = Path(state_dir)
-
-    final_report = state_dir / "FINAL_REPORT.md"
     findings: list[Finding] = []
 
-    if final_report.exists():
-        try:
-            findings = list(_parse_markdown(final_report.read_text(errors="replace"), audit_id))
-        except Exception:  # defensive: parser bugs shouldn't nuke the audit
-            findings = []
+    # Fast-path: v2 structured JSON produced by the awk extractor in code-audit.sh.
+    # Skips markdown regex entirely; every finding gets parse_confidence=1.0.
+    for json_name in ("FINAL_REPORT.json", "findings.json"):
+        jp = state_dir / json_name
+        if jp.exists() and jp.stat().st_size > 2:  # more than just "[]"
+            try:
+                findings = _parse_v2_json(jp, audit_id)
+                if findings:
+                    break
+            except Exception:
+                findings = []
 
-    # Fallback: pull from accumulated findings if FINAL_REPORT is empty/missing
+    # Fallback: v1 markdown path — kept so old audit runs still parse.
+    if not findings:
+        final_report = state_dir / "FINAL_REPORT.md"
+        if final_report.exists():
+            try:
+                findings = list(_parse_markdown(final_report.read_text(errors="replace"), audit_id))
+            except Exception:
+                findings = []
+
     if not findings:
         master = state_dir / "findings.md"
         if master.exists():
@@ -123,7 +138,57 @@ def parse_code_state(state_dir: Path, audit_id: str) -> tuple[list[Finding], Aud
     summary = _summarize(findings)
     summary.iterations = _count_iterations(state_dir)
     summary.files_scanned = _count_files_scanned(state_dir)
+
+    # v2: prefer metrics.json counts if present — the awk extractor already
+    # knows exactly what it found, avoids double-counting edge cases.
+    metrics_path = state_dir / "metrics.json"
+    if metrics_path.exists():
+        try:
+            m = json.loads(metrics_path.read_text())
+            summary.total = int(m.get("total", summary.total))
+            summary.high = int(m.get("high", summary.high))
+            summary.medium = int(m.get("medium", summary.medium))
+            summary.low = int(m.get("low", summary.low))
+            summary.info = int(m.get("info", summary.info))
+            summary.files_scanned = int(m.get("files_scanned", summary.files_scanned))
+            summary.iterations = int(m.get("iterations", summary.iterations))
+        except (json.JSONDecodeError, ValueError, OSError):
+            pass
+
     return findings, summary
+
+
+def _parse_v2_json(path: Path, audit_id: str) -> list[Finding]:
+    """
+    Read CodeAnalysis v2 FINAL_REPORT.json / findings.json. Schema produced by
+    the awk extractor in code-audit.sh — fields match Finding exactly except for
+    id/audit_id/raw_line which are filled in here.
+    """
+    raw = json.loads(path.read_text(errors="replace"))
+    if not isinstance(raw, list):
+        return []
+
+    out: list[Finding] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        sev = item.get("severity", "info")
+        if sev not in SEVERITY_VALUES:
+            sev = _coerce_severity(sev)
+        out.append(Finding(
+            id=str(uuid.uuid4()),
+            audit_id=audit_id,
+            severity=sev,
+            finding_type=item.get("finding_type", "hypothesis"),
+            file=item.get("file", ""),
+            line_range=item.get("line_range", ""),
+            message=str(item.get("message", ""))[:2000],
+            confidence=item.get("confidence", "medium").lower(),
+            source_section=item.get("source_section", ""),
+            raw_line="",
+            parse_confidence=1.0,
+        ))
+    return out
 
 
 def _parse_markdown(text: str, audit_id: str) -> Iterable[Finding]:
@@ -242,6 +307,8 @@ def _heuristic_finding(line: str, section: str, audit_id: str) -> Finding | None
 
 def _coerce_severity(raw: str) -> str:
     raw = raw.lower().strip()
+    if raw in SEVERITY_VALUES:            # "high"/"medium"/"low"/"info" pass through
+        return raw
     if raw in ("critical", "crit", "severe", "blocker"):
         return "high"
     if raw in ("med", "moderate", "warn", "warning"):
