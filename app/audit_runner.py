@@ -1,16 +1,17 @@
 """
-Audit runner — spawns code-audit.sh or repolens.sh as async subprocesses,
-streams output over WebSocket, persists structured findings to SQLite,
-and writes summary metrics to InfluxDB.
+Audit runner — spawns code-audit.sh, repolens.sh, or local-sast.sh as async
+subprocesses, streams output over WebSocket, persists structured findings to
+SQLite, and writes summary metrics to InfluxDB.
 
 Mirrors the execute_run() pattern in main.py:
   - asyncio.create_subprocess_exec (non-blocking)
   - line-by-line stdout broadcast to connected WebSockets
   - final state written to SQLite, last 8000 chars of output kept
 
-Supports two backends:
-  code    — ./scripts/run-audit.sh (wraps code-audit.sh / code-audit.sh)
-  repolens — repolens.sh (expects the binary on PATH or at REPOLENS_PATH)
+Supported backends:
+  code       — ./scripts/run-audit.sh (AI-driven; wraps code-audit.sh)
+  repolens   — repolens.sh (AI-driven; expects binary on PATH or REPOLENS_SCRIPT)
+  local-sast — ./scripts/local-sast.sh (zero-cost; semgrep + bandit + ruff)
 """
 
 from __future__ import annotations
@@ -36,6 +37,9 @@ RALPH_SCRIPT = Path(os.getenv("RALPH_SCRIPT", "/scripts/run-audit.sh"))
 # returns an error at start time rather than at import.
 REPOLENS_SCRIPT = os.getenv("REPOLENS_SCRIPT", "repolens.sh")
 
+# Path to local-sast.sh. Bundled in scripts/; no external install needed.
+LOCAL_SAST_SCRIPT = Path(os.getenv("LOCAL_SAST_SCRIPT", "/scripts/local-sast.sh"))
+
 # The agent CLI passed through to both backends. Both tools understand
 # "claude" out of the box. Operators override per audit via env_vars.
 DEFAULT_AGENT = os.getenv("AUDIT_DEFAULT_AGENT", "claude")
@@ -53,10 +57,11 @@ BroadcastFn = Callable[[str, str], Awaitable[None]]
 class AuditBackend:
     RALPH = "code"
     REPOLENS = "repolens"
+    LOCAL_SAST = "local-sast"
 
 
 def validate_backend(name: str) -> str:
-    if name not in (AuditBackend.RALPH, AuditBackend.REPOLENS):
+    if name not in (AuditBackend.RALPH, AuditBackend.REPOLENS, AuditBackend.LOCAL_SAST):
         raise ValueError(f"unknown audit backend: {name!r}")
     return name
 
@@ -223,6 +228,8 @@ def _build_command(
         return _build_code_cmd(target, agent, scope, state_dir, env)
     if backend == AuditBackend.REPOLENS:
         return _build_repolens_cmd(target, agent, scope, state_dir, env)
+    if backend == AuditBackend.LOCAL_SAST:
+        return _build_local_sast_cmd(target, state_dir, env)
     raise ValueError(f"unknown backend: {backend}")
 
 
@@ -321,6 +328,22 @@ def _build_repolens_cmd(
     return cmd, env
 
 
+def _build_local_sast_cmd(
+    target: Path,
+    state_dir: Path,
+    env: dict[str, str],
+) -> tuple[list[str], dict[str, str]]:
+    """
+    Wrap local-sast.sh. Runs semgrep + bandit + ruff with no AI calls —
+    zero external cost. Results land in state_dir as JSON files.
+    """
+    if not LOCAL_SAST_SCRIPT.exists():
+        raise FileNotFoundError(f"local-sast script missing at {LOCAL_SAST_SCRIPT}")
+    env["STATE_DIR"] = str(state_dir)
+    cmd = ["bash", str(LOCAL_SAST_SCRIPT), str(target)]
+    return cmd, env
+
+
 # ── scope validation ────────────────────────────────────────────────────────
 
 def normalize_scope(backend: str, raw_scope: dict[str, Any] | None) -> dict[str, Any]:
@@ -343,6 +366,7 @@ def normalize_scope(backend: str, raw_scope: dict[str, Any] | None) -> dict[str,
         if "max_cost" in scope:
             # dollars; default budget cap at $200
             scope["max_cost"] = max(1, min(float(scope["max_cost"]), 200))
+    # local-sast: no scope knobs — tools run with defaults
 
     return scope
 

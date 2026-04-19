@@ -82,7 +82,7 @@ def init_db():
     conn.execute("""
         CREATE TABLE IF NOT EXISTS audits (
             id            TEXT PRIMARY KEY,
-            backend       TEXT NOT NULL,        -- 'code' | 'repolens'
+            backend       TEXT NOT NULL,        -- 'code' | 'repolens' | 'local-sast'
             target        TEXT NOT NULL,        -- resolved absolute path
             target_name   TEXT,                 -- display name (basename)
             agent         TEXT,                 -- claude | codex | opencode/...
@@ -137,7 +137,7 @@ class RunRequest(BaseModel):
 
 
 class AuditRequest(BaseModel):
-    backend: str                       # 'code' | 'repolens'
+    backend: str                       # 'code' | 'repolens' | 'local-sast'
     target: str                        # path or repo name under AUDIT_WORKSPACE/repos/
     agent: str = "claude"              # claude | codex | opencode | opencode/<model>
     scope: dict = {}                   # backend-specific knobs (see audit_runner.normalize_scope)
@@ -508,9 +508,15 @@ def list_audit_backends():
             or Path(audit_runner.REPOLENS_SCRIPT).exists()
     except Exception:
         pass
+    local_sast_ok = audit_runner.LOCAL_SAST_SCRIPT.exists() and (
+        shutil.which("semgrep") is not None
+        or shutil.which("bandit") is not None
+        or shutil.which("ruff") is not None
+    )
     return {
         "code": {"available": code_ok, "path": str(audit_runner.RALPH_SCRIPT)},
         "repolens": {"available": repolens_ok, "path": audit_runner.REPOLENS_SCRIPT},
+        "local-sast": {"available": local_sast_ok, "path": str(audit_runner.LOCAL_SAST_SCRIPT)},
     }
 
 

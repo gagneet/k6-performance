@@ -2,7 +2,7 @@
 Findings parser — turns code-audit's markdown output into structured
 rows we can store in SQLite and graph in Grafana.
 
-Ralph's FINAL_REPORT.md follows a well-defined template from its prompt
+Code Analysis's FINAL_REPORT.md follows a well-defined template from its prompt
 (see PROMPT.md seeded in code-audit.sh). We parse:
 
   ## Priority Findings
@@ -12,7 +12,7 @@ into (severity, finding_type, file, line_range, message, confidence).
 
 Design notes
 ------------
-Ralph's output is AI-generated markdown, so the parser is permissive:
+Code Analysis output is AI-generated markdown, so the parser is permissive:
   - tolerates extra whitespace, emojis, missing sections
   - falls back to heuristic tagging when a line doesn't match the template
   - never raises on unparseable input — returns best-effort rows + a
@@ -333,6 +333,113 @@ def parse_repolens_state(state_dir: Path, audit_id: str) -> tuple[list[Finding],
     return findings, summary
 
 
+# ── Local SAST parser (semgrep + bandit + ruff) ─────────────────────────────
+
+def parse_local_sast_state(state_dir: Path, audit_id: str) -> tuple[list[Finding], AuditSummary]:
+    """
+    Reads JSON files written by scripts/local-sast.sh:
+      semgrep.json — semgrep OSS scan results
+      bandit.json  — bandit Python security results
+      ruff.json    — ruff Python code-quality results
+    """
+    findings: list[Finding] = []
+    state_dir = Path(state_dir)
+    if (p := state_dir / "semgrep.json").exists():
+        findings.extend(_parse_semgrep(p, audit_id))
+    if (p := state_dir / "bandit.json").exists():
+        findings.extend(_parse_bandit(p, audit_id))
+    if (p := state_dir / "ruff.json").exists():
+        findings.extend(_parse_ruff(p, audit_id))
+    return findings, _summarize(findings)
+
+
+def _parse_semgrep(path: Path, audit_id: str) -> list[Finding]:
+    try:
+        data = json.loads(path.read_text(errors="replace"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    results = []
+    for item in data.get("results", []):
+        extra = item.get("extra", {})
+        meta = extra.get("metadata", {})
+        sev_raw = extra.get("severity", "INFO").upper()
+        sev = {"ERROR": "high", "WARNING": "medium", "INFO": "low"}.get(sev_raw, "low")
+        conf_raw = str(meta.get("confidence", "MEDIUM")).upper()
+        conf = {"HIGH": "high", "MEDIUM": "medium", "LOW": "low"}.get(conf_raw, "medium")
+        cat = str(meta.get("category", "security"))
+        results.append(Finding(
+            id=str(uuid.uuid4()),
+            audit_id=audit_id,
+            severity=sev,
+            finding_type=cat if cat in TYPE_VALUES else "security",
+            file=str(item.get("path", "")),
+            line_range=str(item.get("start", {}).get("line", "")),
+            message=str(extra.get("message", "(no description)"))[:2000],
+            confidence=conf,
+            source_section="semgrep",
+            raw_line=str(item.get("check_id", ""))[:500],
+            parse_confidence=0.95,
+        ))
+    return results
+
+
+def _parse_bandit(path: Path, audit_id: str) -> list[Finding]:
+    try:
+        data = json.loads(path.read_text(errors="replace"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    results = []
+    for item in data.get("results", []):
+        sev_raw = str(item.get("issue_severity", "LOW")).upper()
+        sev = {"HIGH": "high", "MEDIUM": "medium", "LOW": "low"}.get(sev_raw, "low")
+        conf_raw = str(item.get("issue_confidence", "MEDIUM")).upper()
+        conf = {"HIGH": "high", "MEDIUM": "medium", "LOW": "low"}.get(conf_raw, "medium")
+        results.append(Finding(
+            id=str(uuid.uuid4()),
+            audit_id=audit_id,
+            severity=sev,
+            finding_type="security",
+            file=str(item.get("filename", "")),
+            line_range=str(item.get("line_number", "")),
+            message=str(item.get("issue_text", "(no description)"))[:2000],
+            confidence=conf,
+            source_section="bandit",
+            raw_line=str(item.get("test_id", ""))[:500],
+            parse_confidence=0.95,
+        ))
+    return results
+
+
+def _parse_ruff(path: Path, audit_id: str) -> list[Finding]:
+    try:
+        data = json.loads(path.read_text(errors="replace"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    if not isinstance(data, list):
+        return []
+    results = []
+    for item in data:
+        code = str(item.get("code", ""))
+        # S* = security (ruff-bandit), E9* = syntax errors, E/F = style/logic
+        sev = "high" if code.startswith(("S", "E9")) else "medium" if code.startswith(("E", "F")) else "low"
+        ftype = "security" if code.startswith("S") else "bug" if code.startswith(("E9", "F")) else "hypothesis"
+        loc = item.get("location", {})
+        results.append(Finding(
+            id=str(uuid.uuid4()),
+            audit_id=audit_id,
+            severity=sev,
+            finding_type=ftype,
+            file=str(item.get("filename", "")),
+            line_range=str(loc.get("row", "")),
+            message=f"[{code}] {item.get('message', '(no description)')}"[:2000],
+            confidence="high",
+            source_section="ruff",
+            raw_line=code[:500],
+            parse_confidence=0.9,
+        ))
+    return results
+
+
 # ── public dispatcher ───────────────────────────────────────────────────────
 
 def parse_audit_output(
@@ -342,4 +449,6 @@ def parse_audit_output(
         return parse_code_state(state_dir, audit_id)
     if backend == "repolens":
         return parse_repolens_state(state_dir, audit_id)
+    if backend == "local-sast":
+        return parse_local_sast_state(state_dir, audit_id)
     return [], AuditSummary()
