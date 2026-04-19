@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import re
+import shutil
 import sqlite3
 import subprocess
 import uuid
@@ -48,6 +49,7 @@ ws_connections: dict[str, list[WebSocket]] = {}
 def get_db():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 
@@ -241,7 +243,7 @@ async def execute_run(run_id: str, req: RunRequest):
         run_id,
         status=status,
         exit_code=exit_code,
-        finished_at=datetime.utcnow().isoformat(),
+        finished_at=datetime.now(timezone.utc).isoformat(),
         output=full_output[-8000:],
     )
     await broadcast(run_id, f"\n__DONE__:{status}")
@@ -428,7 +430,7 @@ async def start_run(req: RunRequest, background_tasks: BackgroundTasks):
         "extra_tags, commit_sha, started_at) VALUES (?,?,?,?,?,?,?,?,?)",
         (run_id, req.script, "running", req.vus, req.duration,
          req.target_url, json.dumps(req.extra_tags), req.commit_sha,
-         datetime.utcnow().isoformat()),
+         datetime.now(timezone.utc).isoformat()),
     )
     conn.commit()
     conn.close()
@@ -466,7 +468,7 @@ async def stop_run(run_id: str):
     if not proc:
         raise HTTPException(status_code=404, detail="Run not active")
     proc.terminate()
-    db_update_run(run_id, status="aborted", finished_at=datetime.utcnow().isoformat())
+    db_update_run(run_id, status="aborted", finished_at=datetime.now(timezone.utc).isoformat())
     return {"status": "aborted"}
 
 
@@ -502,8 +504,6 @@ def list_audit_backends():
     ralph_ok = audit_runner.RALPH_SCRIPT.exists()
     repolens_ok = False
     try:
-        # shutil.which is cheap; if REPOLENS_SCRIPT is a bare name, check PATH
-        import shutil
         repolens_ok = shutil.which(audit_runner.REPOLENS_SCRIPT) is not None \
             or Path(audit_runner.REPOLENS_SCRIPT).exists()
     except Exception:
@@ -528,7 +528,7 @@ async def start_audit(req: AuditRequest, background_tasks: BackgroundTasks):
         "linked_run_id, started_at) VALUES (?,?,?,?,?,?,?,?)",
         (audit_id, req.backend, req.target, req.agent,
          json.dumps(req.scope), "running", req.linked_run_id,
-         datetime.utcnow().isoformat()),
+         datetime.now(timezone.utc).isoformat()),
     )
     conn.commit()
     conn.close()
@@ -589,7 +589,7 @@ async def stop_audit(audit_id: str):
     proc.terminate()
     db_update_audit(
         audit_id, status="aborted",
-        finished_at=datetime.utcnow().isoformat(),
+        finished_at=datetime.now(timezone.utc).isoformat(),
     )
     return {"status": "aborted"}
 
