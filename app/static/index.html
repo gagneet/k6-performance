@@ -533,6 +533,9 @@ async function loadHistory() {
     const grafanaLink = r.started_at
       ? `${grafanaUrl}/d/k6-perf/k6-performance-dashboard?var-testid=${r.id}&from=${encodeURIComponent(r.started_at + 'Z')}&to=${encodeURIComponent((r.finished_at || new Date().toISOString()) + 'Z')}`
       : '#';
+    const sha = r.commit_sha
+      ? `<code style="font-family:var(--mono);color:var(--blue);font-size:11px">${r.commit_sha.slice(0,7)}</code>`
+      : '<span style="color:var(--muted)">—</span>';
     return `<tr>
       <td><a class="run-link" href="#" onclick="replayRun('${r.id}')">${r.id}</a></td>
       <td>${r.script}</td>
@@ -540,6 +543,7 @@ async function loadHistory() {
       <td>${r.vus ?? '—'}</td>
       <td>${r.duration ?? '—'}</td>
       <td>${dur}</td>
+      <td>${sha}</td>
       <td style="color:var(--muted);font-size:12px">${r.started_at ? r.started_at.replace('T',' ').slice(0,19) : '—'}</td>
       <td>
         <a class="action-btn" href="${grafanaLink}" target="_blank">Grafana ↗</a>
@@ -550,7 +554,7 @@ async function loadHistory() {
 
   el.innerHTML = `<table>
     <thead><tr>
-      <th>Run ID</th><th>Script</th><th>Status</th><th>VUs</th><th>Duration</th><th>Elapsed</th><th>Started</th><th>Actions</th>
+      <th>Run ID</th><th>Script</th><th>Status</th><th>VUs</th><th>Duration</th><th>Elapsed</th><th>Commit</th><th>Started</th><th>Actions</th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
@@ -605,12 +609,15 @@ let auditWs = null;
 let _auditTargets = [];  // cached from /api/audit/targets for SHA lookup
 
 async function loadAuditTargets() {
-  // Backends
+  // Backends — reset text first so repeated tab visits don't accumulate " (not installed)"
   try {
     const backends = await fetch('/api/audit/backends').then(r => r.json());
     const sel = document.getElementById('auditBackend');
     for (const opt of sel.options) {
       const k = opt.value;
+      // Strip any prior annotation before re-applying
+      opt.text = opt.text.replace(/ \(not installed\)$/, '');
+      opt.disabled = false;
       if (backends[k] && !backends[k].available) {
         opt.text = opt.text + ' (not installed)';
         opt.disabled = true;
