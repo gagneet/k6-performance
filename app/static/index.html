@@ -132,6 +132,8 @@
     <div class="nav-links">
       <a href="#" class="active" onclick="showPage('run',this)">Run Test</a>
       <a href="#" onclick="showPage('history',this)">History</a>
+      <a href="#" onclick="showPage('audit',this)">Audit</a>
+      <a href="#" onclick="showPage('audits',this)">Audits History</a>
     </div>
     <a id="grafana-link" class="grafana-btn" href="#" target="_blank">Open Grafana ↗</a>
   </div>
@@ -215,6 +217,115 @@
         <div id="historyContent">
           <div class="empty-state">Loading...</div>
         </div>
+      </div>
+    </div>
+
+    <!-- Audit page (start a new audit) -->
+    <div class="page" id="page-audit">
+      <div class="run-panel">
+        <div class="field-group">
+          <label>Backend</label>
+          <select id="auditBackend" onchange="onAuditBackendChange()">
+            <option value="ralph">Ralph (fast, cheap)</option>
+            <option value="repolens">RepoLens (280 lenses, $$$)</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label>Target Repo</label>
+          <select id="auditTarget" style="min-width:220px">
+            <option value="">— loading —</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label>Agent CLI</label>
+          <select id="auditAgent">
+            <option value="claude">claude</option>
+            <option value="codex">codex</option>
+            <option value="opencode">opencode</option>
+          </select>
+        </div>
+        <div class="field-group" id="ralphScopeBox">
+          <label>Max Batch Bytes</label>
+          <input type="number" id="auditBatchBytes" value="90000" min="10000" max="500000" style="width:110px">
+        </div>
+        <div class="field-group" id="ralphScopeBox2">
+          <label>Max Iterations</label>
+          <input type="number" id="auditMaxIter" value="50" min="1" max="500" style="width:110px">
+        </div>
+        <div class="field-group" id="repolensScopeBox" style="display:none">
+          <label>Focus (lens id, optional)</label>
+          <input type="text" id="auditFocus" placeholder="e.g. injection" style="width:180px">
+        </div>
+        <div class="field-group" id="repolensScopeBox2" style="display:none">
+          <label>Domain (optional)</label>
+          <input type="text" id="auditDomain" placeholder="e.g. security" style="width:160px">
+        </div>
+        <div class="field-group" id="repolensScopeBox3" style="display:none">
+          <label>Max Cost ($)</label>
+          <input type="number" id="auditMaxCost" value="20" min="1" max="200" style="width:90px">
+        </div>
+        <div class="field-group">
+          <label>Link to k6 Run (optional)</label>
+          <select id="auditLinkRun" style="min-width:180px">
+            <option value="">— auto by commit SHA —</option>
+          </select>
+        </div>
+        <button class="run-btn" id="auditRunBtn" onclick="startAudit()">▶ Run Audit</button>
+        <button class="stop-btn" id="auditStopBtn" onclick="stopAudit()">■ Stop</button>
+      </div>
+
+      <div class="stats-bar" id="auditStatsBar" style="display:none">
+        <div class="stat-card">
+          <div class="stat-label">Backend</div>
+          <div class="stat-value" id="astat-backend" style="font-size:13px;margin-top:6px">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Status</div>
+          <div class="stat-value" id="astat-status" style="font-size:13px;margin-top:6px">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Audit ID</div>
+          <div class="stat-value" id="astat-id" style="font-size:13px;font-family:var(--mono);margin-top:6px">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">High / Med / Low</div>
+          <div class="stat-value" id="astat-findings" style="font-size:14px;margin-top:6px">—</div>
+        </div>
+      </div>
+
+      <div class="terminal-wrap">
+        <div class="terminal-header">
+          <div class="status-dot" id="auditStatusDot"></div>
+          <span id="auditTerminalLabel">Pick a target and click Run Audit</span>
+          <span style="margin-left:auto;font-size:11px" id="auditGrafanaLink"></span>
+        </div>
+        <div class="terminal" id="auditTerminal">
+          <span style="color:var(--muted)">Waiting for audit...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Audits history page -->
+    <div class="page" id="page-audits">
+      <div class="history-panel">
+        <div class="history-header">
+          <div class="history-title">Audit History</div>
+          <button class="refresh-btn" onclick="loadAudits()">↻ Refresh</button>
+        </div>
+        <div id="auditsContent">
+          <div class="empty-state">Loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Audit detail modal -->
+    <div id="auditDetailModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;align-items:center;justify-content:center">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;width:min(1100px,92vw);max-height:88vh;display:flex;flex-direction:column">
+        <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+          <div style="font-size:15px;font-weight:600" id="auditDetailTitle">Audit</div>
+          <button class="refresh-btn" onclick="closeAuditDetail()">✕ Close</button>
+        </div>
+        <div style="overflow:auto;padding:16px 18px" id="auditDetailBody"></div>
       </div>
     </div>
 
@@ -472,11 +583,320 @@ function showPage(name, linkEl) {
   document.querySelectorAll('.nav-links a').forEach(a => a.classList.remove('active'));
   if (linkEl) linkEl.classList.add('active');
   if (name === 'history') loadHistory();
+  if (name === 'audit') loadAuditTargets();
+  if (name === 'audits') loadAudits();
 }
 
 function formatBytes(b) {
   if (b < 1024) return b + ' B';
   return (b / 1024).toFixed(1) + ' KB';
+}
+
+// ── audit: start / stream / history ─────────────────────────────────────────
+
+let currentAuditId = null;
+let auditWs = null;
+
+async function loadAuditTargets() {
+  // Backends
+  try {
+    const backends = await fetch('/api/audit/backends').then(r => r.json());
+    const sel = document.getElementById('auditBackend');
+    for (const opt of sel.options) {
+      const k = opt.value;
+      if (backends[k] && !backends[k].available) {
+        opt.text = opt.text + ' (not installed)';
+        opt.disabled = true;
+      }
+    }
+  } catch {}
+
+  // Targets
+  try {
+    const targets = await fetch('/api/audit/targets').then(r => r.json());
+    const sel = document.getElementById('auditTarget');
+    if (!targets.length) {
+      sel.innerHTML = '<option value="">— no repos mounted —</option>';
+    } else {
+      sel.innerHTML = targets.map(t => {
+        const sha = t.commit_sha ? ` @${t.commit_sha.slice(0,7)}` : ' (no git)';
+        return `<option value="${t.name}">${t.name}${sha}</option>`;
+      }).join('');
+    }
+  } catch {
+    document.getElementById('auditTarget').innerHTML = '<option value="">— error —</option>';
+  }
+
+  // Link-to-run dropdown (k6 runs from the last 50)
+  try {
+    const runs = await fetch('/api/runs?limit=50').then(r => r.json());
+    const sel = document.getElementById('auditLinkRun');
+    sel.innerHTML = '<option value="">— auto by commit SHA —</option>' +
+      runs.map(r => `<option value="${r.id}">${r.id} · ${r.script} · ${r.status}</option>`).join('');
+  } catch {}
+
+  onAuditBackendChange();
+}
+
+function onAuditBackendChange() {
+  const backend = document.getElementById('auditBackend').value;
+  const ralphBoxes = ['ralphScopeBox', 'ralphScopeBox2'];
+  const repolensBoxes = ['repolensScopeBox', 'repolensScopeBox2', 'repolensScopeBox3'];
+  ralphBoxes.forEach(id => document.getElementById(id).style.display = backend === 'ralph' ? '' : 'none');
+  repolensBoxes.forEach(id => document.getElementById(id).style.display = backend === 'repolens' ? '' : 'none');
+}
+
+async function startAudit() {
+  const backend = document.getElementById('auditBackend').value;
+  const target = document.getElementById('auditTarget').value;
+  const agent = document.getElementById('auditAgent').value;
+  const linkedRunId = document.getElementById('auditLinkRun').value || null;
+
+  if (!target) { alert('Pick a target repo first'); return; }
+
+  const scope = {};
+  if (backend === 'ralph') {
+    scope.max_batch_bytes = parseInt(document.getElementById('auditBatchBytes').value || '90000', 10);
+    scope.max_iterations = parseInt(document.getElementById('auditMaxIter').value || '50', 10);
+  } else {
+    const focus = document.getElementById('auditFocus').value.trim();
+    const domain = document.getElementById('auditDomain').value.trim();
+    const cost = parseFloat(document.getElementById('auditMaxCost').value || '20');
+    if (focus) scope.focus = focus;
+    if (domain) scope.domain = domain;
+    scope.max_cost = cost;
+    // RepoLens parallel is off by default — operator flips via env_vars for now.
+  }
+
+  // Cost warning for repolens
+  if (backend === 'repolens' && !scope.focus && !scope.domain) {
+    if (!confirm('RepoLens full audit can cost hundreds of dollars. Continue without --focus or --domain?')) return;
+  }
+
+  setAuditRunning(true);
+  clearAuditTerminal();
+  document.getElementById('auditStatsBar').style.display = 'flex';
+  document.getElementById('astat-backend').textContent = backend;
+  document.getElementById('astat-status').textContent = 'starting';
+  document.getElementById('astat-findings').textContent = '—';
+
+  try {
+    const res = await fetch('/api/audits', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({backend, target, agent, scope, linked_run_id: linkedRunId, env_vars: {}}),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      appendAuditTerminal(`[error] ${err}\n`, 'var(--red)');
+      setAuditRunning(false);
+      return;
+    }
+    const data = await res.json();
+    currentAuditId = data.audit_id;
+    document.getElementById('astat-id').textContent = data.audit_id;
+    document.getElementById('auditTerminalLabel').textContent = `Audit ${data.audit_id} — streaming...`;
+    setAuditDot('running');
+    connectAuditWS(data.audit_id);
+  } catch (exc) {
+    appendAuditTerminal(`[error] ${exc}\n`, 'var(--red)');
+    setAuditRunning(false);
+  }
+}
+
+async function stopAudit() {
+  if (!currentAuditId) return;
+  await fetch(`/api/audits/${currentAuditId}/stop`, {method: 'DELETE'}).catch(() => {});
+}
+
+function connectAuditWS(auditId) {
+  if (auditWs) auditWs.close();
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  auditWs = new WebSocket(`${proto}://${location.host}/ws/${auditId}`);
+  auditWs.onmessage = e => {
+    const msg = e.data;
+    if (msg.startsWith('\n__DONE__:') || msg.startsWith('__DONE__:')) {
+      const status = msg.replace(/.*__DONE__:/, '').trim();
+      setAuditDot(status);
+      document.getElementById('astat-status').textContent = status;
+      document.getElementById('auditTerminalLabel').textContent = `Audit ${auditId} — ${status}`;
+      setAuditRunning(false);
+      // Pull the final summary
+      fetch(`/api/audits/${auditId}`).then(r => r.json()).then(d => {
+        const s = d.summary || {};
+        document.getElementById('astat-findings').textContent =
+          `${s.high ?? 0} / ${s.medium ?? 0} / ${s.low ?? 0}`;
+      }).catch(() => {});
+      return;
+    }
+    appendAuditTerminalRaw(msg);
+  };
+  auditWs.onerror = () => appendAuditTerminal('\n[WebSocket error]\n', 'var(--red)');
+}
+
+function clearAuditTerminal() {
+  document.getElementById('auditTerminal').innerHTML = '';
+}
+function appendAuditTerminal(text, color) {
+  const t = document.getElementById('auditTerminal');
+  const span = document.createElement('span');
+  if (color) span.style.color = color;
+  span.textContent = text;
+  t.appendChild(span);
+  t.scrollTop = t.scrollHeight;
+}
+function appendAuditTerminalRaw(text) {
+  const t = document.getElementById('auditTerminal');
+  t.insertAdjacentHTML('beforeend', ansiToHtml(text));
+  t.scrollTop = t.scrollHeight;
+}
+function setAuditRunning(running) {
+  document.getElementById('auditRunBtn').disabled = running;
+  document.getElementById('auditStopBtn').style.display = running ? 'block' : 'none';
+}
+function setAuditDot(status) {
+  const dot = document.getElementById('auditStatusDot');
+  dot.className = 'status-dot ' + (status || '');
+}
+
+// ── audits history ──────────────────────────────────────────────────────────
+
+async function loadAudits() {
+  const audits = await fetch('/api/audits').then(r => r.json()).catch(() => []);
+  const el = document.getElementById('auditsContent');
+  if (!audits.length) {
+    el.innerHTML = '<div class="empty-state"><div style="font-size:40px">🔍</div><p>No audits yet. Start one from the Audit tab.</p></div>';
+    return;
+  }
+  const rows = audits.map(a => {
+    const s = a.summary || {};
+    const sevBadges = [
+      s.high  ? `<span class="badge badge-failed">H ${s.high}</span>`    : '',
+      s.medium? `<span class="badge badge-running">M ${s.medium}</span>` : '',
+      s.low   ? `<span class="badge badge-aborted">L ${s.low}</span>`    : '',
+    ].filter(Boolean).join(' ') || '<span style="color:var(--muted)">—</span>';
+    const dur = a.finished_at
+      ? Math.round((new Date(a.finished_at) - new Date(a.started_at)) / 1000) + 's'
+      : '—';
+    const sha = a.commit_sha ? `<code style="font-family:var(--mono);color:var(--text2)">${a.commit_sha.slice(0,7)}</code>` : '<span style="color:var(--muted)">—</span>';
+    const linked = a.linked_run_id
+      ? `<a class="run-link" href="#" onclick="showPage('history',document.querySelectorAll('.nav-links a')[1]);return false">${a.linked_run_id}</a>`
+      : '<span style="color:var(--muted)">—</span>';
+    return `<tr>
+      <td><a class="run-link" href="#" onclick="viewAuditDetail('${a.id}');return false">${a.id}</a></td>
+      <td>${a.backend}</td>
+      <td>${a.target_name || '—'}</td>
+      <td>${sha}</td>
+      <td><span class="badge badge-${a.status}">${a.status}</span></td>
+      <td>${sevBadges}</td>
+      <td>${linked}</td>
+      <td style="color:var(--muted);font-size:12px">${a.started_at ? a.started_at.replace('T',' ').slice(0,19) : '—'}</td>
+      <td>${dur}</td>
+    </tr>`;
+  }).join('');
+  el.innerHTML = `<table>
+    <thead><tr>
+      <th>Audit ID</th><th>Backend</th><th>Target</th><th>Commit</th><th>Status</th>
+      <th>Findings (H/M/L)</th><th>Linked k6 Run</th><th>Started</th><th>Elapsed</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+async function viewAuditDetail(auditId) {
+  const modal = document.getElementById('auditDetailModal');
+  const body = document.getElementById('auditDetailBody');
+  const title = document.getElementById('auditDetailTitle');
+  modal.style.display = 'flex';
+  body.innerHTML = '<div class="empty-state">Loading...</div>';
+  title.textContent = `Audit ${auditId}`;
+
+  let d;
+  try {
+    d = await fetch(`/api/audits/${auditId}`).then(r => r.json());
+  } catch {
+    body.innerHTML = '<div class="empty-state">Failed to load.</div>';
+    return;
+  }
+  const s = d.summary || {};
+  const findings = d.findings || [];
+
+  const sevCell = v => {
+    if (v === 'high') return '<span class="badge badge-failed">high</span>';
+    if (v === 'medium') return '<span class="badge badge-running">medium</span>';
+    if (v === 'low') return '<span class="badge badge-aborted">low</span>';
+    return `<span class="badge badge-aborted">${v}</span>`;
+  };
+
+  const findingsTable = findings.length
+    ? `<table style="margin-top:10px">
+         <thead><tr>
+           <th>Severity</th><th>Type</th><th>File</th><th>Lines</th><th>Message</th><th>Conf.</th>
+         </tr></thead>
+         <tbody>${findings.map(f => `
+           <tr>
+             <td>${sevCell(f.severity)}</td>
+             <td style="font-size:12px">${f.finding_type}</td>
+             <td style="font-family:var(--mono);font-size:12px">${f.file || '—'}</td>
+             <td style="font-family:var(--mono);font-size:12px">${f.line_range || '—'}</td>
+             <td style="max-width:520px">${escapeHtml(f.message || '')}</td>
+             <td style="font-size:12px">${f.confidence}${f.parse_confidence < 0.8 ? ' <span title="heuristic parse" style="color:var(--muted)">~</span>' : ''}</td>
+           </tr>`).join('')}
+         </tbody>
+       </table>`
+    : '<div class="empty-state">No structured findings parsed from this audit.</div>';
+
+  const linkRow = `
+    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px;font-size:13px">
+      <div><span style="color:var(--muted)">Backend:</span> ${d.backend}</div>
+      <div><span style="color:var(--muted)">Target:</span> <code style="font-family:var(--mono)">${d.target_name || d.target || '—'}</code></div>
+      <div><span style="color:var(--muted)">Commit:</span> <code style="font-family:var(--mono)">${d.commit_sha || '—'}</code></div>
+      <div><span style="color:var(--muted)">Status:</span> <span class="badge badge-${d.status}">${d.status}</span></div>
+      <div><span style="color:var(--muted)">Linked k6 Run:</span>
+        ${d.linked_run_id ? `<code style="font-family:var(--mono)">${d.linked_run_id}</code>` : '—'}
+        <button class="action-btn" style="margin-left:6px" onclick="promptLinkRun('${d.id}')">Link…</button>
+      </div>
+    </div>`;
+
+  const summaryRow = `
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+      <div class="stat-card"><div class="stat-label">Total</div><div class="stat-value">${s.total ?? 0}</div></div>
+      <div class="stat-card"><div class="stat-label">High</div><div class="stat-value" style="color:var(--red)">${s.high ?? 0}</div></div>
+      <div class="stat-card"><div class="stat-label">Medium</div><div class="stat-value" style="color:var(--accent)">${s.medium ?? 0}</div></div>
+      <div class="stat-card"><div class="stat-label">Low</div><div class="stat-value" style="color:var(--text2)">${s.low ?? 0}</div></div>
+      <div class="stat-card"><div class="stat-label">Files scanned</div><div class="stat-value">${s.files_scanned ?? 0}</div></div>
+      <div class="stat-card"><div class="stat-label">Iterations</div><div class="stat-value">${s.iterations ?? 0}</div></div>
+    </div>`;
+
+  const grafanaBtn = d.commit_sha
+    ? `<a class="action-btn" target="_blank" href="${grafanaUrl}/d/k6-perf/k6-performance-dashboard?var-audit_id=${d.id}${d.linked_run_id ? '&var-testid=' + d.linked_run_id : ''}">Open in Grafana ↗</a>`
+    : '';
+
+  body.innerHTML = linkRow + summaryRow +
+    `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><h3 style="font-size:14px">Findings</h3>${grafanaBtn}</div>` +
+    findingsTable;
+}
+
+function closeAuditDetail() {
+  document.getElementById('auditDetailModal').style.display = 'none';
+}
+
+async function promptLinkRun(auditId) {
+  const runId = prompt('k6 run id to link (leave blank to cancel):');
+  if (!runId) return;
+  const res = await fetch(`/api/audits/${auditId}/link`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({run_id: runId.trim()}),
+  });
+  if (res.ok) { viewAuditDetail(auditId); loadAudits(); }
+  else alert('Link failed: ' + (await res.text()));
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, ch => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  })[ch]);
 }
 
 init();
