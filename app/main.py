@@ -185,7 +185,7 @@ def _script_has_stages(script_path: Path) -> bool:
 
 
 async def execute_run(run_id: str, req: RunRequest):
-    script_path = SCRIPTS_DIR / req.script
+    script_path = _resolve_script(req.script) or (SCRIPTS_DIR / req.script)
     env = {**os.environ}
     if req.target_url:
         env["TARGET_URL"] = req.target_url
@@ -383,8 +383,28 @@ def _scan_scripts(base: Path, prefix: str = "") -> list[dict]:
     for ext in ("*.js", "*.ts"):
         for f in sorted(base.glob(ext)):
             name = (prefix + "/" + f.name) if prefix else f.name
-            result.append({"name": name, "size": f.stat().st_size})
+            result.append({"name": name, "path": str(f), "size": f.stat().st_size})
     return result
+
+
+def _resolve_script(name: str) -> Path | None:
+    """
+    Resolve a script name (as returned by /api/scripts) to an absolute Path.
+    Checks SCRIPTS_DIR first, then EXTRA_SCRIPTS_DIRS matched by their
+    directory name prefix.  Returns None if not found in any location.
+    """
+    # Direct path under the primary scripts directory
+    p = SCRIPTS_DIR / name
+    if p.exists():
+        return p
+    # Extra dirs: name is "<dirbasename>/<filename>", strip prefix and look there
+    for extra_dir in EXTRA_SCRIPTS_DIRS:
+        dir_prefix = extra_dir.name + "/"
+        if name.startswith(dir_prefix):
+            p = extra_dir / name[len(dir_prefix):]
+            if p.exists():
+                return p
+    return None
 
 
 @app.get("/api/scripts")
@@ -397,8 +417,8 @@ def list_scripts():
 
 @app.post("/api/runs")
 async def start_run(req: RunRequest, background_tasks: BackgroundTasks):
-    script_path = SCRIPTS_DIR / req.script
-    if not script_path.exists():
+    script_path = _resolve_script(req.script)
+    if not script_path:
         raise HTTPException(status_code=404, detail="Script not found")
 
     run_id = str(uuid.uuid4())[:8]
