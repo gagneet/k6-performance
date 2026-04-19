@@ -465,7 +465,7 @@ function connectWS(runId) {
   ws.onmessage = e => {
     const data = e.data;
     if (data.startsWith('__DONE__:')) {
-      const status = data.split(':')[1];
+      const status = data.slice('__DONE__:'.length).trim();
       setRunning(false);
       setDot(status);
       document.getElementById('stat-status').textContent = status.charAt(0).toUpperCase() + status.slice(1);
@@ -740,8 +740,8 @@ function connectAuditWS(auditId) {
   auditWs = new WebSocket(`${proto}://${location.host}/ws/${auditId}`);
   auditWs.onmessage = e => {
     const msg = e.data;
-    if (msg.startsWith('\n__DONE__:') || msg.startsWith('__DONE__:')) {
-      const status = msg.replace(/.*__DONE__:/, '').trim();
+    if (msg.startsWith('__DONE__:')) {
+      const status = msg.slice('__DONE__:'.length).trim();
       setAuditDot(status);
       document.getElementById('astat-status').textContent = status;
       document.getElementById('auditTerminalLabel').textContent = `Audit ${auditId} — ${status}`;
