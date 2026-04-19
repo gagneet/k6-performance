@@ -21,6 +21,9 @@ import influx_writer
 app = FastAPI(title="k6 Performance Portal")
 
 SCRIPTS_DIR = Path(os.getenv("SCRIPTS_DIR", "/scripts"))
+# Optional extra script directories (colon-separated), e.g. /strata-scripts
+_extra = os.getenv("EXTRA_SCRIPTS_DIRS", "")
+EXTRA_SCRIPTS_DIRS: list[Path] = [Path(d) for d in _extra.split(":") if d.strip()]
 DB_PATH = Path("/data/runs.db")
 INFLUXDB_URL = os.getenv("INFLUXDB_URL", "http://localhost:8086/k6")
 GRAFANA_URL = os.getenv("GRAFANA_URL", "http://localhost:3000")
@@ -373,23 +376,22 @@ def get_config():
     return {"grafana_url": GRAFANA_URL}
 
 
+def _scan_scripts(base: Path, prefix: str = "") -> list[dict]:
+    if not base.exists():
+        return []
+    result = []
+    for ext in ("*.js", "*.ts"):
+        for f in sorted(base.glob(ext)):
+            name = (prefix + "/" + f.name) if prefix else f.name
+            result.append({"name": name, "size": f.stat().st_size})
+    return result
+
+
 @app.get("/api/scripts")
 def list_scripts():
-    if not SCRIPTS_DIR.exists():
-        return []
-    scripts = []
-    # Root-level .js and .ts scripts
-    for ext in ("*.js", "*.ts"):
-        for f in sorted(SCRIPTS_DIR.glob(ext)):
-            scripts.append({"name": f.name, "size": f.stat().st_size})
-    # One level of subdirectories (e.g. strata-management/ mounted at /scripts/strata-management)
-    for subdir in sorted(p for p in SCRIPTS_DIR.iterdir() if p.is_dir()):
-        for ext in ("*.js", "*.ts"):
-            for f in sorted(subdir.glob(ext)):
-                scripts.append({
-                    "name": str(f.relative_to(SCRIPTS_DIR)),
-                    "size": f.stat().st_size,
-                })
+    scripts = _scan_scripts(SCRIPTS_DIR)
+    for extra_dir in EXTRA_SCRIPTS_DIRS:
+        scripts.extend(_scan_scripts(extra_dir, prefix=extra_dir.name))
     return scripts
 
 

@@ -57,6 +57,8 @@ services:
       # /data/audits/<audit_id>/ and the target repos under /data/audits/repos/.
       - AUDIT_WORKSPACE=/data/audits
       - RALPH_SCRIPT=/scripts/run-audit.sh
+      # Colon-separated list of extra script directories scanned alongside SCRIPTS_DIR
+      - EXTRA_SCRIPTS_DIRS=/strata-scripts
       # REPOLENS_SCRIPT must be on PATH or an absolute path. Default bare name
       # assumes operators install RepoLens into the image at build time or
       # via a custom derived Dockerfile. Set to a path (e.g. /opt/repolens/repolens.sh)
@@ -74,8 +76,8 @@ services:
       - "8000:8000"
     volumes:
       - ./scripts:/scripts:ro
-      # strata-management perf scripts accessible as "strata-management/<name>" in the portal
-      - /home/gagneet/strata-management/tests/performance:/scripts/strata-management:ro
+      # strata-management perf scripts at a separate mount (can't nest inside :ro /scripts)
+      - /home/gagneet/strata-management/tests/performance:/strata-scripts:ro
       - portal-data:/data
       # strata-management source available as an audit target under /data/audits/repos/
       - /home/gagneet/strata-management:/data/audits/repos/strata-management:ro

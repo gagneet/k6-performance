@@ -97,7 +97,10 @@ def detect_git_sha(repo: Path) -> str | None:
         return None
     try:
         result = subprocess.run(
-            ["git", "-C", str(repo), "rev-parse", "--short=12", "HEAD"],
+            # -c safe.directory=* suppresses the "dubious ownership" error git raises
+            # when a bind-mounted repo is owned by a different UID than the container user.
+            ["git", "-c", "safe.directory=*", "-C", str(repo),
+             "rev-parse", "--short=12", "HEAD"],
             capture_output=True, text=True, timeout=5, check=True,
         )
         return result.stdout.strip() or None
