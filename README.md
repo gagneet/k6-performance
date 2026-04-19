@@ -96,6 +96,18 @@ MAX_BATCH_BYTES=30000 MAX_ITERATIONS=10 \
 VERIFY_CMD='pytest -q' \
   ./scripts/code-audit.sh /path/to/repo
 
+# v2: audit only files changed since main (fast PR review)
+DIFF_ONLY=1 BASE_REF=main ./scripts/code-audit.sh /path/to/repo
+
+# v2: preview cost before spending anything
+COST_ESTIMATE=1 CONFIRM_COST=1 ./scripts/code-audit.sh /path/to/repo
+
+# v2: run semgrep/bandit/ruff before AI loop and inject as context
+STATIC_ANALYSIS=1 ./scripts/code-audit.sh /path/to/repo
+
+# v2: review recently-changed files first
+CHURN_SORT=1 CHURN_DAYS=14 ./scripts/code-audit.sh /path/to/repo
+
 # Inside the container
 docker compose exec portal bash /scripts/run-audit.sh /data/audits/repos/myapp
 ```
@@ -138,7 +150,18 @@ Drop a `.js` file into `scripts/` — it appears in the portal immediately (dire
 
 ---
 
+## Tests
+
+```bash
+pytest tests/
+```
+
+74 pytest tests covering `findings_parser.py` (severity coercion, markdown and JSON parsing, SAST backends) and `tests/test_awk_extractor.py` (validates that the awk-based `extract_findings_json` in `code-audit.sh` produces output field-by-field identical to the Python parser). All tests are idempotent and leave no filesystem state.
+
+---
+
 ## Detailed reference
 
 - **[USAGE.md](USAGE.md)** — complete guide: all CLI options, all env vars, all API endpoints, UI walkthrough, Grafana setup, cron configuration
 - **[AUDIT.md](AUDIT.md)** — audit feature architecture, backend details, correlation mechanics, security notes
+- **[CHANGELOG.md](CHANGELOG.md)** — full history of changes

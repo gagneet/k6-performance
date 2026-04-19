@@ -242,6 +242,16 @@ curl -s -X POST http://localhost:8000/api/audits \
 | `PREVIEW_ONLY` | 0 | If `1`: write manifest/preflight and exit (no AI calls) |
 | `RUN_PREFLIGHT_AI` | 0 | If `1`: run one AI pass on `PREFLIGHT_PROMPT.md` before main audit |
 | `STATE_DIR` | `<repo>/.code-audit` | Where audit state is persisted |
+| `DIFF_ONLY` | 0 | If `1`: only audit files changed since `BASE_REF` (fast PR review) |
+| `BASE_REF` | `main` | Git ref used as the diff base when `DIFF_ONLY=1` |
+| `COST_ESTIMATE` | 0 | If `1`: print token/cost preview before any AI calls |
+| `CONFIRM_COST` | 0 | If `1`: require interactive confirmation after cost estimate |
+| `PRICE_IN_PER_MTOK` | `3.0` | Input price per million tokens (for cost estimate display) |
+| `PRICE_OUT_PER_MTOK` | `15.0` | Output price per million tokens (for cost estimate display) |
+| `STATIC_ANALYSIS` | 0 | If `1`: run semgrep + bandit + ruff before the AI loop and inject as context |
+| `CHURN_SORT` | 0 | If `1`: review recently-changed files first |
+| `CHURN_DAYS` | 30 | Lookback window (days) for churn sort |
+| `PROGRESS_JSON` | 0 | If `1`: write `progress.json` atomically after each iteration |
 
 ### Output structure (under `STATE_DIR`)
 
@@ -256,7 +266,12 @@ curl -s -X POST http://localhost:8000/api/audits \
 | `verify.txt` | Output of `VERIFY_CMD` |
 | `findings.md` | Accumulated raw findings from all iterations |
 | `iterations/` | Per-iteration AI responses (`iteration-001.md`, etc.) |
-| `FINAL_REPORT.md` | Deduplicated final report (parsed by the portal into findings rows) |
+| `FINAL_REPORT.md` | Deduplicated final report (v1 format; parsed via regex) |
+| `findings.json` | Structured findings array emitted by `extract_findings_json` (v2; `parse_confidence=1.0`) |
+| `FINAL_REPORT.json` | Final report as structured JSON (v2 preferred over `FINAL_REPORT.md`) |
+| `metrics.json` | Summary counts from awk extractor (total, high, medium, low, info, files_scanned, iterations) |
+| `progress.json` | Live iteration progress (written atomically; requires `PROGRESS_JSON=1`) |
+| `static.txt` | Combined semgrep + bandit + ruff output (requires `STATIC_ANALYSIS=1`) |
 
 ---
 
@@ -474,6 +489,8 @@ Base URL: `http://localhost:8000`
 | `ws://localhost:8000/ws/{run_id}` | Stream live k6 output (run_id is 8 hex chars) |
 | `ws://localhost:8000/ws/{audit_id}` | Stream live audit output (audit_id is `a-` + 8 hex chars) |
 
+**`__DONE__` sentinel protocol** — When a run or audit finishes, the server sends a final standalone WebSocket message of the form `__DONE__:<status>` (e.g. `__DONE__:passed`, `__DONE__:failed`, `__DONE__:error`). This message is sent separately from any preceding output lines. Clients should detect completion with `msg.startsWith('__DONE__:')` and extract the status with `msg.slice('__DONE__:'.length).trim()`.
+
 ### POST /api/audits — full payload
 
 ```json
@@ -529,7 +546,7 @@ Set these in a `.env` file next to `docker-compose.yml`, or export before `make 
 | `ANTHROPIC_API_KEY` | — | Required for `claude` agent CLI |
 | `OPENAI_API_KEY` | — | Required for `codex` agent CLI |
 | `INFLUXDB_URL` | `http://influxdb:8086/k6` | InfluxDB write endpoint (internal) |
-| `GRAFANA_URL` | `http://localhost:3000` | Grafana base URL shown in the UI |
+| `GRAFANA_URL` | `http://localhost:3100` | Grafana base URL shown in the UI |
 | `SCRIPTS_DIR` | `/scripts` | Primary k6 scripts directory |
 | `EXTRA_SCRIPTS_DIRS` | — | Colon-separated extra script directories |
 | `AUDIT_WORKSPACE` | `/data/audits` | Root for audit state and target repos |

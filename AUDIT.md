@@ -101,19 +101,45 @@ All schema changes are additive. Existing k6 run data is untouched.
 ### CodeAnalysis (`scripts/code-audit.sh`, called via `run-audit.sh`)
 
 A read-only bash-driven audit loop that batches source files and pipes them
-to an agent CLI (`claude`, `codex`, `llm`, etc.) in iterations. Produces a
-`FINAL_REPORT.md` which the portal parses into structured findings.
+to an agent CLI (`claude`, `codex`, `llm`, etc.) in iterations. Produces
+structured JSON output (`findings.json`, `metrics.json`) and a human-readable
+`FINAL_REPORT.md`. The portal prefers the JSON fast-path (`parse_confidence=1.0`)
+over the markdown regex fallback (`parse_confidence=0.3–1.0`).
+
+**Output files** (under `STATE_DIR`):
+
+| File | Version | Description |
+|---|---|---|
+| `FINAL_REPORT.md` | v1+ | Deduplicated markdown report |
+| `findings.json` | v2 | Structured findings array (preferred by parser) |
+| `FINAL_REPORT.json` | v2 | Final report as JSON (highest preference) |
+| `metrics.json` | v2 | Summary counts: total, high, medium, low, info, files_scanned, iterations |
+| `progress.json` | v2 | Live per-iteration progress (requires `PROGRESS_JSON=1`) |
+| `static.txt` | v2 | Static analysis output (requires `STATIC_ANALYSIS=1`) |
 
 **Cost**: low to moderate — one full pass of a 50k-LOC repo typically runs
 for 20–40 iterations of `claude -p --model opus`. Budget accordingly per
 your Anthropic pricing.
+
+**v2 features** (set via env passthrough or the API `env_vars` field):
+
+| Env var | Default | Description |
+|---|---|---|
+| `DIFF_ONLY` | 0 | Audit only files changed since `BASE_REF` (fast PR review) |
+| `BASE_REF` | `main` | Git ref for `DIFF_ONLY` diff base |
+| `COST_ESTIMATE` | 0 | Print token/cost estimate before calling AI |
+| `CONFIRM_COST` | 0 | Require confirmation after cost estimate |
+| `STATIC_ANALYSIS` | 0 | Pre-pass: run semgrep + bandit + ruff before AI loop |
+| `CHURN_SORT` | 0 | Review recently-changed files first |
+| `CHURN_DAYS` | 30 | Lookback window for churn sort |
+| `PROGRESS_JSON` | 0 | Write `progress.json` atomically after each iteration |
 
 **Knobs** (in the UI "Run Audit" form or via env passthrough):
 
 | UI field | Env var | Default | Notes |
 |---|---|---|---|
 | Max Batch Bytes | `MAX_BATCH_BYTES` | 90000 | Smaller → more iterations, less context per call |
-| Max Iterations | `MAX_ITERATIONS` | 50 | Hard safety cap (audit aborts if exceeded) |
+| Max Iterations | `MAX_ITERATIONS` | 200 | Hard safety cap (audit aborts if exceeded) |
 | — | `AI_CMD` | `claude -p --model opus --effort max --tools "" --no-session-persistence` | Override the full agent command |
 | — | `EXTRA_EXCLUDES` | — | Comma-separated globs to exclude |
 
