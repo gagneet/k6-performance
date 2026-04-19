@@ -27,7 +27,7 @@ _extra = os.getenv("EXTRA_SCRIPTS_DIRS", "")
 EXTRA_SCRIPTS_DIRS: list[Path] = [Path(d) for d in _extra.split(":") if d.strip()]
 DB_PATH = Path("/data/runs.db")
 INFLUXDB_URL = os.getenv("INFLUXDB_URL", "http://localhost:8086/k6")
-GRAFANA_URL = os.getenv("GRAFANA_URL", "http://localhost:3000")
+GRAFANA_URL = os.getenv("GRAFANA_URL", "http://localhost:3100")
 
 # Audit state lives in /data/audits/<audit_id>/
 AUDIT_ROOT = Path(os.getenv("AUDIT_WORKSPACE", "/data/audits"))
@@ -246,7 +246,7 @@ async def execute_run(run_id: str, req: RunRequest):
         finished_at=datetime.now(timezone.utc).isoformat(),
         output=full_output[-8000:],
     )
-    await broadcast(run_id, f"\n__DONE__:{status}")
+    await broadcast(run_id, f"__DONE__:{status}")
 
 
 # ── audit execution (new) ────────────────────────────────────────────────────
@@ -272,7 +272,8 @@ async def execute_audit(audit_id: str, req: AuditRequest):
             finished_at=datetime.now(timezone.utc).isoformat(),
             exit_code=-1, output=str(exc),
         )
-        await broadcast(audit_id, f"[error] {exc}\n__DONE__:error")
+        await broadcast(audit_id, f"[error] {exc}\n")
+        await broadcast(audit_id, "__DONE__:error")
         return
 
     commit_sha = audit_runner.detect_git_sha(target_path)
@@ -366,9 +367,9 @@ async def execute_audit(audit_id: str, req: AuditRequest):
     await broadcast(
         audit_id,
         f"\n[audit complete] total={summary.total} "
-        f"high={summary.high} medium={summary.medium} low={summary.low}\n"
-        f"__DONE__:{result['status']}"
+        f"high={summary.high} medium={summary.medium} low={summary.low}\n",
     )
+    await broadcast(audit_id, f"__DONE__:{result['status']}")
 
 
 # ── API: k6 runs (existing, one addition) ────────────────────────────────────
@@ -671,7 +672,7 @@ async def ws_endpoint(websocket: WebSocket, channel_id: str):
     if row and row["status"] not in ("running",):
         if row["output"]:
             await websocket.send_text(row["output"])
-        await websocket.send_text(f"\n__DONE__:{row['status']}")
+        await websocket.send_text(f"__DONE__:{row['status']}")
         await websocket.close()
         return
 
