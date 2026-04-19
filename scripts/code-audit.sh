@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# ralph-audit.sh — AI-powered read-only codebase audit loop
+# code-audit.sh — AI-powered read-only codebase audit loop
 #
 # Walks an entire repository file-by-file in batches, sends each batch to a
 # headless AI CLI for architecture/logic review, accumulates findings, then
@@ -32,29 +32,29 @@ set -Eeuo pipefail
 #   - Standard POSIX tools: find, sort, wc, nl, tail, head, sed, grep
 #
 # Quick start:
-#   ./ralph-audit.sh /path/to/repo
+#   ./code-audit.sh /path/to/repo
 #
 # Examples:
 #   # Use defaults (claude -p --model opus --effort max --tools "" --no-session-persistence)
-#   ./ralph-audit.sh .
+#   ./code-audit.sh .
 #
 #   # Use a different AI command
-#   AI_CMD='llm -m gpt-4o' ./ralph-audit.sh /path/to/repo
+#   AI_CMD='llm -m gpt-4o' ./code-audit.sh /path/to/repo
 #
 #   # Run pytest before the audit and include its output as context
-#   VERIFY_CMD='pytest -q' ./ralph-audit.sh .
+#   VERIFY_CMD='pytest -q' ./code-audit.sh .
 #
 #   # Smaller batches for a model with limited context
-#   MAX_BATCH_BYTES=30000 ./ralph-audit.sh .
+#   MAX_BATCH_BYTES=30000 ./code-audit.sh .
 #
 #   # Build manifest/preflight artifacts only; do not run VERIFY_CMD or AI_CMD
-#   PREVIEW_ONLY=1 ./ralph-audit.sh .
+#   PREVIEW_ONLY=1 ./code-audit.sh .
 #
 #   # Add repo-specific exclude globs without editing this script
-#   EXTRA_EXCLUDES='.claude/*,deployment/*secret*' ./ralph-audit.sh .
+#   EXTRA_EXCLUDES='.claude/*,deployment/*secret*' ./code-audit.sh .
 #
 #   # Resume an interrupted audit (just re-run the same command)
-#   ./ralph-audit.sh /path/to/repo   # picks up where it left off
+#   ./code-audit.sh /path/to/repo   # picks up where it left off
 #
 # Environment variables:
 #   AI_CMD             Command that reads a prompt on stdin, writes response to
@@ -79,7 +79,7 @@ set -Eeuo pipefail
 #                      running VERIFY_CMD or AI_CMD. Default: 0
 #   RUN_PREFLIGHT_AI   If 1, run AI_CMD once on PREFLIGHT_PROMPT.md before the
 #                      audit. Default: 0
-#   STATE_DIR          Where to store audit state. Default: <repo>/.ralph-audit
+#   STATE_DIR          Where to store audit state. Default: <repo>/.code-audit
 #
 # Output structure (all under STATE_DIR):
 #   PROMPT.md          The system prompt sent to the AI (auto-seeded, editable)
@@ -99,7 +99,7 @@ set -Eeuo pipefail
 #   - This script never edits your code, but it does stream included files to
 #     AI_CMD. Inspect PREFLIGHT.md or use PREVIEW_ONLY=1 for sensitive repos.
 #   - Tune PROMPT.md mid-run if needed; it is re-read each iteration.
-#   - Add .ralph-audit/ to .gitignore if you don't want to commit state.
+#   - Add .code-audit/ to .gitignore if you don't want to commit state.
 
 show_help() {
   # Print everything between line 4 (first # comment) and the first blank line
@@ -131,7 +131,7 @@ EXTRA_EXCLUDES="${EXTRA_EXCLUDES:-}"
 PREVIEW_ONLY="${PREVIEW_ONLY:-0}"
 RUN_PREFLIGHT_AI="${RUN_PREFLIGHT_AI:-0}"
 
-STATE_DIR="${STATE_DIR:-$ROOT/.ralph-audit}"
+STATE_DIR="${STATE_DIR:-$ROOT/.code-audit}"
 ITER_DIR="$STATE_DIR/iterations"
 PROMPT_FILE="$STATE_DIR/PROMPT.md"
 PREFLIGHT_FILE="$STATE_DIR/PREFLIGHT.md"
@@ -146,13 +146,13 @@ MASTER_FINDINGS="$STATE_DIR/findings.md"
 FINAL_REPORT="$STATE_DIR/FINAL_REPORT.md"
 INPUT_FILE="$STATE_DIR/input.md"
 BATCH_FILE="$STATE_DIR/batch.txt"
-LOG_FILE="$STATE_DIR/ralph-audit.log"
+LOG_FILE="$STATE_DIR/code-audit.log"
 
 mkdir -p "$STATE_DIR" "$ITER_DIR"
 touch "$REVIEWED" "$MASTER_FINDINGS"
 
 log() {
-  printf '[ralph-audit %s] %s\n' "$(date -u +%H:%M:%S)" "$*" | tee -a "$LOG_FILE" >&2
+  printf '[code-audit %s] %s\n' "$(date -u +%H:%M:%S)" "$*" | tee -a "$LOG_FILE" >&2
 }
 
 trap 'log "UNEXPECTED EXIT (code=$?, line=$LINENO)"' ERR
@@ -260,7 +260,7 @@ is_excluded_path() {
     .venv/*|venv/*|env/*|.mypy_cache/*|__pycache__/*|.pytest_cache/*|.ruff_cache/*|\
     .next/*|.nuxt/*|.turbo/*|.idea/*|.vscode/*|.claude/*|.codex/*|.cursor/*|\
     .DS_Store|.env|.env.*|.mcp.json|*.pem|*.key|*.p12|*.pfx|*.kdbx|*.age|\
-    secrets/*|secret/*|credentials/*|data/*|.ralph-audit/*|.ralph-*-audit/*)
+    secrets/*|secret/*|credentials/*|data/*|.code-audit/*|.code-*-audit/*)
       return 0
       ;;
     *)
@@ -299,7 +299,7 @@ find_repo_files() {
       -name .next -o -name .nuxt -o -name .turbo -o -name .idea -o \
       -name .vscode -o -name .claude -o -name .codex -o -name .cursor -o \
       -name secrets -o -name secret -o -name credentials -o \
-      -name data -o -name '.ralph-audit' -o -name '.ralph-*-audit' \
+      -name data -o -name '.code-audit' -o -name '.code-*-audit' \
     \) -prune \) -o \
     -type f -print0
 }
@@ -385,7 +385,7 @@ write_preflight_files() {
   done < "$MANIFEST"
 
   {
-    echo "# Ralph Audit Preflight"
+    echo "# code Audit Preflight"
     echo
     echo "Generated before any VERIFY_CMD or AI_CMD execution."
     echo
@@ -406,7 +406,7 @@ write_preflight_files() {
     echo
     echo "## How To Adapt"
     echo "- To skip extra paths for this run, set EXTRA_EXCLUDES with comma/space-separated shell globs, for example:"
-    echo "  EXTRA_EXCLUDES='.claude/*,deployment/*secret*' ./ralph-audit.sh ."
+    echo "  EXTRA_EXCLUDES='.claude/*,deployment/*secret*' ./code-audit.sh ."
     echo "- To tune the review behavior, edit PROMPT.md before or during the audit."
     echo "- To ask an AI for repo-specific tuning advice without sending source contents, review or run PREFLIGHT_PROMPT.md."
     echo
@@ -414,7 +414,7 @@ write_preflight_files() {
   } > "$PREFLIGHT_FILE"
 
   {
-    echo "You are tuning ralph-audit.sh before it runs an AI code audit over a private repository."
+    echo "You are tuning code-audit.sh before it runs an AI code audit over a private repository."
     echo
     echo "Task:"
     echo "- Inspect the audit script and repository manifest below."

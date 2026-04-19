@@ -1,9 +1,9 @@
 """
-Findings parser — turns ralph-audit's markdown output into structured
+Findings parser — turns code-audit's markdown output into structured
 rows we can store in SQLite and graph in Grafana.
 
 Ralph's FINAL_REPORT.md follows a well-defined template from its prompt
-(see PROMPT.md seeded in ralph-audit.sh). We parse:
+(see PROMPT.md seeded in code-audit.sh). We parse:
 
   ## Priority Findings
   - [severity: high] [type: confirmed] src/auth.py:42 — JWT audience check missing. Why it matters. Confidence: high
@@ -72,7 +72,7 @@ class AuditSummary:
         return asdict(self)
 
 
-# ── Ralph parser ────────────────────────────────────────────────────────────
+# ── CodeAnalysis parser ────────────────────────────────────────────────────────────
 
 # Matches lines like:
 #   - [severity: high] [type: confirmed] src/auth.py:42 — JWT audience ... Confidence: high
@@ -94,9 +94,9 @@ _PATH_RE = re.compile(
 _CONFIDENCE_RE = re.compile(r"confidence\s*[:=]\s*(?P<conf>high|medium|low)", re.IGNORECASE)
 
 
-def parse_ralph_state(state_dir: Path, audit_id: str) -> tuple[list[Finding], AuditSummary]:
+def parse_code_state(state_dir: Path, audit_id: str) -> tuple[list[Finding], AuditSummary]:
     """
-    Main entry point for Ralph output. Reads FINAL_REPORT.md if present,
+    Main entry point for CodeAnalysis output. Reads FINAL_REPORT.md if present,
     otherwise falls back to accumulating findings from iteration files.
     Always returns a (findings, summary) tuple — never raises.
     """
@@ -338,8 +338,8 @@ def parse_repolens_state(state_dir: Path, audit_id: str) -> tuple[list[Finding],
 def parse_audit_output(
     backend: str, state_dir: Path, audit_id: str,
 ) -> tuple[list[Finding], AuditSummary]:
-    if backend == "ralph":
-        return parse_ralph_state(state_dir, audit_id)
+    if backend == "code":
+        return parse_code_state(state_dir, audit_id)
     if backend == "repolens":
         return parse_repolens_state(state_dir, audit_id)
     return [], AuditSummary()

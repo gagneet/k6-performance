@@ -11,7 +11,7 @@ Schema
 Measurement: audit_summary
   Tags:
     audit_id   — 8-char uuid prefix (matches portal's SQLite PK)
-    backend    — "ralph" or "repolens"
+    backend    — "code" or "repolens"
     target     — short repo name (last path segment)
     commit_sha — 12-char git SHA if available, else "none"
     testid     — optional k6 run_id this audit is linked to, else "none"

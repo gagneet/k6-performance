@@ -4,7 +4,7 @@ FROM python:3.11-slim
 
 # ── system tools needed by the audit backends ──────────────────────────────
 # git       — HEAD SHA detection for audit↔k6 correlation
-# bash      — ralph-audit.sh & run-audit.sh require bash 4+
+# bash      — code-audit.sh & run-audit.sh require bash 4+
 # jq        — RepoLens requires jq for its JSON config parsing
 # curl      — Claude Code installer; also used for healthchecks
 # ca-certs  — TLS for agent CLI egress

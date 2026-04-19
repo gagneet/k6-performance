@@ -82,7 +82,7 @@ def init_db():
     conn.execute("""
         CREATE TABLE IF NOT EXISTS audits (
             id            TEXT PRIMARY KEY,
-            backend       TEXT NOT NULL,        -- 'ralph' | 'repolens'
+            backend       TEXT NOT NULL,        -- 'code' | 'repolens'
             target        TEXT NOT NULL,        -- resolved absolute path
             target_name   TEXT,                 -- display name (basename)
             agent         TEXT,                 -- claude | codex | opencode/...
@@ -137,7 +137,7 @@ class RunRequest(BaseModel):
 
 
 class AuditRequest(BaseModel):
-    backend: str                       # 'ralph' | 'repolens'
+    backend: str                       # 'code' | 'repolens'
     target: str                        # path or repo name under AUDIT_WORKSPACE/repos/
     agent: str = "claude"              # claude | codex | opencode | opencode/<model>
     scope: dict = {}                   # backend-specific knobs (see audit_runner.normalize_scope)
@@ -255,7 +255,7 @@ async def execute_audit(audit_id: str, req: AuditRequest):
     """
     Run an audit end-to-end:
       1. resolve target + detect git SHA
-      2. spawn backend subprocess (ralph or repolens)
+      2. spawn backend subprocess (code or repolens)
       3. parse structured findings from state dir
       4. persist findings to SQLite
       5. push summary + per-finding points to InfluxDB
@@ -300,7 +300,7 @@ async def execute_audit(audit_id: str, req: AuditRequest):
     )
 
     # Parse structured findings regardless of exit code — partial data is
-    # better than none, and Ralph often produces useful findings even on
+    # better than none, and CodeAnalysis often produces useful findings even on
     # non-zero exits (e.g. rate-limited mid-run).
     findings, summary = findings_parser.parse_audit_output(
         req.backend, state_dir, audit_id,
@@ -501,7 +501,7 @@ def list_audit_targets():
 @app.get("/api/audit/backends")
 def list_audit_backends():
     """Which backends are actually installed on this host."""
-    ralph_ok = audit_runner.RALPH_SCRIPT.exists()
+    code_ok = audit_runner.RALPH_SCRIPT.exists()
     repolens_ok = False
     try:
         repolens_ok = shutil.which(audit_runner.REPOLENS_SCRIPT) is not None \
@@ -509,7 +509,7 @@ def list_audit_backends():
     except Exception:
         pass
     return {
-        "ralph": {"available": ralph_ok, "path": str(audit_runner.RALPH_SCRIPT)},
+        "code": {"available": code_ok, "path": str(audit_runner.RALPH_SCRIPT)},
         "repolens": {"available": repolens_ok, "path": audit_runner.REPOLENS_SCRIPT},
     }
 

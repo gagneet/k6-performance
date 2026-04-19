@@ -27,7 +27,7 @@ and the audit flagged these high-severity issues on the same commit."
           │ subprocess                 └───────────────┘
           ▼
 ┌────────────────────┐
-│  ralph-audit.sh    │   OR    ┌────────────────────┐
+│  code-audit.sh    │   OR    ┌────────────────────┐
 │  (bundled)         │         │  repolens.sh       │
 └────────────────────┘         │  (operator-install)│
                                └────────────────────┘
@@ -98,7 +98,7 @@ All schema changes are additive. Existing k6 run data is untouched.
 
 ## Backends
 
-### Ralph (`scripts/ralph-audit.sh`, called via `run-audit.sh`)
+### CodeAnalysis (`scripts/code-audit.sh`, called via `run-audit.sh`)
 
 A read-only bash-driven audit loop that batches source files and pipes them
 to an agent CLI (`claude`, `codex`, `llm`, etc.) in iterations. Produces a
@@ -174,7 +174,7 @@ For non-git targets or ad-hoc correlations, use the manual link.
 These notes come straight from the upstream tools and are repeated here so
 you don't miss them:
 
-- **Ralph and RepoLens both run AI agents with shell access** against the
+- **CodeAnalysis and RepoLens both run AI agents with shell access** against the
   target repository. RepoLens in particular runs `claude --dangerously-skip-permissions`.
   This is fine for repos you own on a machine you control — it is **not**
   a sandboxed security tool. Don't point it at untrusted code.
@@ -209,7 +209,7 @@ you don't miss them:
 
 ```json
 {
-  "backend": "ralph",
+  "backend": "code",
   "target": "myapp",
   "agent": "claude",
   "scope": {

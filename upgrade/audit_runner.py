@@ -1,5 +1,5 @@
 """
-Audit runner — spawns ralph-audit.sh or repolens.sh as async subprocesses,
+Audit runner — spawns code-audit.sh or repolens.sh as async subprocesses,
 streams output over WebSocket, persists structured findings to SQLite,
 and writes summary metrics to InfluxDB.
 
@@ -9,7 +9,7 @@ Mirrors the execute_run() pattern in main.py:
   - final state written to SQLite, last 8000 chars of output kept
 
 Supports two backends:
-  ralph    — ./scripts/run-audit.sh (wraps code-audit.sh / ralph-audit.sh)
+  code    — ./scripts/run-audit.sh (wraps code-audit.sh / code-audit.sh)
   repolens — repolens.sh (expects the binary on PATH or at REPOLENS_PATH)
 """
 
@@ -29,7 +29,7 @@ from typing import Any, Callable, Awaitable
 # Where the portal writes audit state. Mounted as a Docker volume in compose.
 AUDIT_WORKSPACE = Path(os.getenv("AUDIT_WORKSPACE", "/data/audits"))
 
-# Path to Ralph script. Defaults to bundled scripts/run-audit.sh.
+# Path to CodeAnalysis script. Defaults to bundled scripts/run-audit.sh.
 RALPH_SCRIPT = Path(os.getenv("RALPH_SCRIPT", "/scripts/run-audit.sh"))
 
 # Path to repolens.sh entry point. Optional — if missing, repolens backend
@@ -51,7 +51,7 @@ BroadcastFn = Callable[[str, str], Awaitable[None]]
 # ── public API ──────────────────────────────────────────────────────────────
 
 class AuditBackend:
-    RALPH = "ralph"
+    RALPH = "code"
     REPOLENS = "repolens"
 
 
@@ -130,7 +130,7 @@ async def run_audit(
       - returns {exit_code, status, output, started_at, finished_at}
 
     Structured findings parsing happens after this function returns,
-    in main.py, via findings_parser.parse_ralph_state() etc.
+    in main.py, via findings_parser.parse_code_state() etc.
     """
     state_dir.mkdir(parents=True, exist_ok=True)
     cmd, env = _build_command(backend, target, agent, scope, env_vars, state_dir)
@@ -217,13 +217,13 @@ def _build_command(
     env = {**os.environ, **{k: str(v) for k, v in env_vars.items()}}
 
     if backend == AuditBackend.RALPH:
-        return _build_ralph_cmd(target, agent, scope, state_dir, env)
+        return _build_code_cmd(target, agent, scope, state_dir, env)
     if backend == AuditBackend.REPOLENS:
         return _build_repolens_cmd(target, agent, scope, state_dir, env)
     raise ValueError(f"unknown backend: {backend}")
 
 
-def _build_ralph_cmd(
+def _build_code_cmd(
     target: Path,
     agent: str,
     scope: dict[str, Any],
@@ -231,13 +231,13 @@ def _build_ralph_cmd(
     env: dict[str, str],
 ) -> tuple[list[str], dict[str, str]]:
     """
-    Wrap ralph-audit.sh. The bundled scripts/run-audit.sh takes the repo
+    Wrap code-audit.sh. The bundled scripts/run-audit.sh takes the repo
     path as $1 and forwards configuration through env vars (MAX_BATCH_BYTES,
     AI_CMD, STATE_DIR, etc — see the original script's help text).
     """
     script = RALPH_SCRIPT
     if not script.exists():
-        raise FileNotFoundError(f"ralph script missing at {script}")
+        raise FileNotFoundError(f"code script missing at {script}")
 
     env["STATE_DIR"] = str(state_dir)
 
