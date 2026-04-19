@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import uuid
@@ -26,6 +27,11 @@ GRAFANA_URL = os.getenv("GRAFANA_URL", "http://localhost:3000")
 
 # Audit state lives in /data/audits/<audit_id>/
 AUDIT_ROOT = Path(os.getenv("AUDIT_WORKSPACE", "/data/audits"))
+
+# audit_ids are "a-" + 8 hex chars; run_ids are 8 hex chars with no dash.
+# uuid4()[:8] can never produce a "-" so the prefix is unambiguous, but we
+# require the full pattern so a bare "a-" channel can't slip through.
+_AUDIT_CHANNEL_RE = re.compile(r'^a-[0-9a-f]{8}$')
 
 # run_id -> asyncio.subprocess.Process
 active_runs: dict[str, asyncio.subprocess.Process] = {}
@@ -613,9 +619,8 @@ def correlate_by_commit(commit_sha: str):
 async def ws_endpoint(websocket: WebSocket, channel_id: str):
     await websocket.accept()
 
-    # Determine which table to look up based on prefix — audit_ids are "a-..."
     conn = get_db()
-    if channel_id.startswith("a-"):
+    if _AUDIT_CHANNEL_RE.fullmatch(channel_id):
         row = conn.execute(
             "SELECT status, output FROM audits WHERE id=?", (channel_id,)
         ).fetchone()

@@ -176,6 +176,10 @@
           <label>Env Vars <span style="font-weight:400;text-transform:none;letter-spacing:0">(KEY=value, one per line)</span></label>
           <textarea id="envVars" rows="3" placeholder="STRATA_EMAIL=user@example.com&#10;STRATA_PASSWORD=secret&#10;STRATA_BUILDING_ID=13195" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:12px;font-family:var(--mono);resize:vertical;width:320px;outline:none;transition:border-color .15s" onfocus="this.style.borderColor='var(--blue)'" onblur="this.style.borderColor='var(--border)'"></textarea>
         </div>
+        <div class="field-group">
+          <label>Commit SHA <span style="font-weight:400;text-transform:none;letter-spacing:0">(links audit correlation)</span></label>
+          <input type="text" id="commitSha" placeholder="abc1234" style="width:120px;font-family:var(--mono)" maxlength="40">
+        </div>
         <button class="run-btn" id="runBtn" onclick="startRun()">▶ Run Test</button>
         <button class="stop-btn" id="stopBtn" onclick="stopRun()">■ Stop</button>
       </div>
@@ -232,7 +236,7 @@
         </div>
         <div class="field-group">
           <label>Target Repo</label>
-          <select id="auditTarget" style="min-width:220px">
+          <select id="auditTarget" style="min-width:220px" onchange="onAuditTargetChange(this.value)">
             <option value="">— loading —</option>
           </select>
         </div>
@@ -405,12 +409,14 @@ async function startRun() {
     }
   });
 
+  const commitSha = document.getElementById('commitSha').value.trim() || null;
   const req = {
     script,
     vus: parseInt(document.getElementById('vus').value) || 10,
     duration: document.getElementById('duration').value || '30s',
     target_url: document.getElementById('targetUrl').value || null,
     env_vars: envVars,
+    commit_sha: commitSha,
   };
 
   setRunning(true);
@@ -596,6 +602,7 @@ function formatBytes(b) {
 
 let currentAuditId = null;
 let auditWs = null;
+let _auditTargets = [];  // cached from /api/audit/targets for SHA lookup
 
 async function loadAuditTargets() {
   // Backends
@@ -613,15 +620,20 @@ async function loadAuditTargets() {
 
   // Targets
   try {
-    const targets = await fetch('/api/audit/targets').then(r => r.json());
+    _auditTargets = await fetch('/api/audit/targets').then(r => r.json());
     const sel = document.getElementById('auditTarget');
-    if (!targets.length) {
+    if (!_auditTargets.length) {
       sel.innerHTML = '<option value="">— no repos mounted —</option>';
     } else {
-      sel.innerHTML = targets.map(t => {
+      sel.innerHTML = _auditTargets.map(t => {
         const sha = t.commit_sha ? ` @${t.commit_sha.slice(0,7)}` : ' (no git)';
         return `<option value="${t.name}">${t.name}${sha}</option>`;
       }).join('');
+      // Auto-fill commit SHA on the run form for the first target
+      if (_auditTargets[0].commit_sha) {
+        const runShaEl = document.getElementById('commitSha');
+        if (runShaEl && !runShaEl.value) runShaEl.value = _auditTargets[0].commit_sha;
+      }
     }
   } catch {
     document.getElementById('auditTarget').innerHTML = '<option value="">— error —</option>';
@@ -636,6 +648,12 @@ async function loadAuditTargets() {
   } catch {}
 
   onAuditBackendChange();
+}
+
+function onAuditTargetChange(name) {
+  const t = _auditTargets.find(x => x.name === name);
+  const runShaEl = document.getElementById('commitSha');
+  if (runShaEl && t && t.commit_sha) runShaEl.value = t.commit_sha;
 }
 
 function onAuditBackendChange() {
