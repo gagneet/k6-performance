@@ -1,0 +1,1697 @@
+{
+  "__inputs": [],
+  "__requires": [],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0,211,255,1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "k6 OSS Load Testing \u2014 InfluxDB backend, historic comparison, all metrics",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 100,
+      "title": "Summary",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "k6-influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
+      "id": 1,
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background"
+      },
+      "title": "Virtual Users",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          },
+          "query": "SELECT last(\"value\") FROM \"vus\" WHERE (\"testid\" = '$testid') AND $timeFilter",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "k6-influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "reqps"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
+      "id": 2,
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "mean"
+          ]
+        },
+        "colorMode": "background"
+      },
+      "title": "Request Rate",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          },
+          "query": "SELECT count(\"value\") / ($__interval_ms / 1000) FROM \"http_reqs\" WHERE (\"testid\" = '$testid') AND $timeFilter GROUP BY time($__interval)",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "k6-influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 500
+              },
+              {
+                "color": "red",
+                "value": 1000
+              }
+            ]
+          },
+          "unit": "ms"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
+      "id": 3,
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "mean"
+          ]
+        },
+        "colorMode": "background"
+      },
+      "title": "p95 Response Time",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          },
+          "query": "SELECT percentile(\"value\", 95) FROM \"http_req_duration\" WHERE (\"testid\" = '$testid') AND $timeFilter",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "k6-influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
+              }
+            ]
+          },
+          "unit": "percentunit"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
+      "id": 4,
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "mean"
+          ]
+        },
+        "colorMode": "background"
+      },
+      "title": "Error Rate",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          },
+          "query": "SELECT mean(\"value\") FROM \"http_req_failed\" WHERE (\"testid\" = '$testid') AND $timeFilter",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "k6-influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
+      "id": 5,
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ]
+        },
+        "colorMode": "background"
+      },
+      "title": "Total Requests",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          },
+          "query": "SELECT count(\"value\") FROM \"http_reqs\" WHERE (\"testid\" = '$testid') AND $timeFilter",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "k6-influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.9
+              },
+              {
+                "color": "green",
+                "value": 0.99
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
+      "id": 6,
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "mean"
+          ]
+        },
+        "colorMode": "background"
+      },
+      "title": "Checks Pass Rate",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          },
+          "query": "SELECT mean(\"value\") FROM \"checks\" WHERE (\"testid\" = '$testid') AND $timeFilter",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "id": 101,
+      "title": "Traffic & Load",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "k6-influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "none"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "VUs"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#5794F2",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      },
+      "id": 10,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "title": "Virtual Users Over Time",
+      "type": "timeseries",
+      "targets": [
+        {
+          "alias": "VUs",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          },
+          "query": "SELECT mean(\"value\") FROM \"vus\" WHERE (\"testid\" = '$testid') AND $timeFilter GROUP BY time($__interval) fill(null)",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "k6-influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "reqps"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
+      "id": 11,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "title": "Request Rate",
+      "type": "timeseries",
+      "targets": [
+        {
+          "alias": "Requests/s",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          },
+          "query": "SELECT count(\"value\") / ($__interval_ms / 1000) FROM \"http_reqs\" WHERE (\"testid\" = '$testid') AND $timeFilter GROUP BY time($__interval) fill(null)",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "id": 102,
+      "title": "Response Times",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "k6-influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "ms"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p99"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#F2495C",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p95"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#FF780A",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p90"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#FADE2A",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p50"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#73BF69",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 16,
+        "x": 0,
+        "y": 15
+      },
+      "id": 20,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "title": "Response Time Percentiles",
+      "type": "timeseries",
+      "targets": [
+        {
+          "alias": "p50",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          },
+          "query": "SELECT percentile(\"value\", 50) FROM \"http_req_duration\" WHERE (\"testid\" = '$testid') AND $timeFilter GROUP BY time($__interval) fill(null)",
+          "rawQuery": true,
+          "refId": "A"
+        },
+        {
+          "alias": "p90",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          },
+          "query": "SELECT percentile(\"value\", 90) FROM \"http_req_duration\" WHERE (\"testid\" = '$testid') AND $timeFilter GROUP BY time($__interval) fill(null)",
+          "rawQuery": true,
+          "refId": "B"
+        },
+        {
+          "alias": "p95",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          },
+          "query": "SELECT percentile(\"value\", 95) FROM \"http_req_duration\" WHERE (\"testid\" = '$testid') AND $timeFilter GROUP BY time($__interval) fill(null)",
+          "rawQuery": true,
+          "refId": "C"
+        },
+        {
+          "alias": "p99",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          },
+          "query": "SELECT percentile(\"value\", 99) FROM \"http_req_duration\" WHERE (\"testid\" = '$testid') AND $timeFilter GROUP BY time($__interval) fill(null)",
+          "rawQuery": true,
+          "refId": "D"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "k6-influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "ms"
+        }
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 15
+      },
+      "id": 21,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "title": "Request Duration Breakdown",
+      "type": "timeseries",
+      "targets": [
+        {
+          "alias": "Waiting (TTFB)",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          },
+          "query": "SELECT mean(\"value\") FROM \"http_req_waiting\" WHERE (\"testid\" = '$testid') AND $timeFilter GROUP BY time($__interval) fill(null)",
+          "rawQuery": true,
+          "refId": "A"
+        },
+        {
+          "alias": "DNS Lookup",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          },
+          "query": "SELECT mean(\"value\") FROM \"http_req_blocked\" WHERE (\"testid\" = '$testid') AND $timeFilter GROUP BY time($__interval) fill(null)",
+          "rawQuery": true,
+          "refId": "B"
+        },
+        {
+          "alias": "Connecting",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          },
+          "query": "SELECT mean(\"value\") FROM \"http_req_connecting\" WHERE (\"testid\" = '$testid') AND $timeFilter GROUP BY time($__interval) fill(null)",
+          "rawQuery": true,
+          "refId": "C"
+        },
+        {
+          "alias": "TLS Handshake",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          },
+          "query": "SELECT mean(\"value\") FROM \"http_req_tls_handshaking\" WHERE (\"testid\" = '$testid') AND $timeFilter GROUP BY time($__interval) fill(null)",
+          "rawQuery": true,
+          "refId": "D"
+        },
+        {
+          "alias": "Sending",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          },
+          "query": "SELECT mean(\"value\") FROM \"http_req_sending\" WHERE (\"testid\" = '$testid') AND $timeFilter GROUP BY time($__interval) fill(null)",
+          "rawQuery": true,
+          "refId": "E"
+        },
+        {
+          "alias": "Receiving",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          },
+          "query": "SELECT mean(\"value\") FROM \"http_req_receiving\" WHERE (\"testid\" = '$testid') AND $timeFilter GROUP BY time($__interval) fill(null)",
+          "rawQuery": true,
+          "refId": "F"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "id": 103,
+      "title": "Errors & Data",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "k6-influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#F2495C"
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 25
+      },
+      "id": 30,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "title": "HTTP Errors Over Time",
+      "type": "timeseries",
+      "targets": [
+        {
+          "alias": "Errors",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          },
+          "query": "SELECT sum(\"value\") FROM \"http_req_failed\" WHERE (\"testid\" = '$testid') AND value=1 AND $timeFilter GROUP BY time($__interval) fill(0)",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "k6-influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "Bps"
+        }
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 25
+      },
+      "id": 31,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "title": "Data Transfer Rate",
+      "type": "timeseries",
+      "targets": [
+        {
+          "alias": "Sent",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          },
+          "query": "SELECT mean(\"value\") FROM \"data_sent\" WHERE (\"testid\" = '$testid') AND $timeFilter GROUP BY time($__interval) fill(null)",
+          "rawQuery": true,
+          "refId": "A"
+        },
+        {
+          "alias": "Received",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          },
+          "query": "SELECT mean(\"value\") FROM \"data_received\" WHERE (\"testid\" = '$testid') AND $timeFilter GROUP BY time($__interval) fill(null)",
+          "rawQuery": true,
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "k6-influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "ms"
+        }
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 25
+      },
+      "id": 32,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "title": "Iteration Duration",
+      "type": "timeseries",
+      "targets": [
+        {
+          "alias": "Iteration Duration",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          },
+          "query": "SELECT mean(\"value\") FROM \"iteration_duration\" WHERE (\"testid\" = '$testid') AND $timeFilter GROUP BY time($__interval) fill(null)",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
+      "id": 104,
+      "title": "Historic Baseline Comparison",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "k6-influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "ms"
+        }
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 33
+      },
+      "id": 40,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "title": "p95 Response Time \u2014 Current vs Baseline",
+      "type": "timeseries",
+      "targets": [
+        {
+          "alias": "Current ($testid)",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          },
+          "query": "SELECT percentile(\"value\", 95) FROM \"http_req_duration\" WHERE (\"testid\" = '$testid') AND $timeFilter GROUP BY time($__interval) fill(null)",
+          "rawQuery": true,
+          "refId": "A"
+        },
+        {
+          "alias": "Baseline ($baseline)",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          },
+          "query": "SELECT percentile(\"value\", 95) FROM \"http_req_duration\" WHERE (\"testid\" = '$baseline') AND $timeFilter GROUP BY time($__interval) fill(null)",
+          "rawQuery": true,
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "k6-influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "reqps"
+        }
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 33
+      },
+      "id": 41,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "title": "Request Rate \u2014 Current vs Baseline",
+      "type": "timeseries",
+      "targets": [
+        {
+          "alias": "Current ($testid)",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          },
+          "query": "SELECT count(\"value\") / ($__interval_ms / 1000) FROM \"http_reqs\" WHERE (\"testid\" = '$testid') AND $timeFilter GROUP BY time($__interval) fill(null)",
+          "rawQuery": true,
+          "refId": "A"
+        },
+        {
+          "alias": "Baseline ($baseline)",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          },
+          "query": "SELECT count(\"value\") / ($__interval_ms / 1000) FROM \"http_reqs\" WHERE (\"testid\" = '$baseline') AND $timeFilter GROUP BY time($__interval) fill(null)",
+          "rawQuery": true,
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 42
+      },
+      "id": 105,
+      "title": "All Runs \u2014 Historic Overview",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "k6-influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "ms"
+        }
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 43
+      },
+      "id": 50,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "title": "p95 Response Time \u2014 All Runs",
+      "type": "timeseries",
+      "targets": [
+        {
+          "alias": "$tag_testid",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          },
+          "query": "SELECT percentile(\"value\", 95) FROM \"http_req_duration\" WHERE $timeFilter GROUP BY time($__interval), \"testid\" fill(null)",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 200,
+      "type": "row",
+      "title": "Code Audit \u2014 Correlated with k6 Runs",
+      "gridPos": {
+        "x": 0,
+        "y": 53,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 201,
+      "type": "timeseries",
+      "title": "Audit Findings by Severity",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "k6-influxdb"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 54,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "H",
+          "query": "SELECT sum(\"high\") AS \"high\" FROM \"audit_summary\" WHERE $timeFilter GROUP BY time(1h) fill(0)",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          }
+        },
+        {
+          "refId": "M",
+          "query": "SELECT sum(\"medium\") AS \"medium\" FROM \"audit_summary\" WHERE $timeFilter GROUP BY time(1h) fill(0)",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          }
+        },
+        {
+          "refId": "L",
+          "query": "SELECT sum(\"low\") AS \"low\" FROM \"audit_summary\" WHERE $timeFilter GROUP BY time(1h) fill(0)",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "fillOpacity": 80,
+            "lineWidth": 0
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "high"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "medium"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "low"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 202,
+      "type": "piechart",
+      "title": "Severity Breakdown \u2014 Selected Audit ($audit_id)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "k6-influxdb"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 54,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "SELECT last(\"high\") AS \"high\", last(\"medium\") AS \"medium\", last(\"low\") AS \"low\" FROM \"audit_summary\" WHERE (\"audit_id\" =~ /^$audit_id$/) AND $timeFilter",
+          "rawQuery": true,
+          "resultFormat": "table",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          }
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "pieType": "donut",
+        "tooltip": {
+          "mode": "single"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "values": [
+            "value"
+          ]
+        },
+        "displayLabels": [
+          "percent"
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "high"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "medium"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "low"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 203,
+      "type": "timeseries",
+      "title": "High-Severity Findings vs p95 Latency \u2014 Linked by testid",
+      "description": "Audits and k6 runs that ran against the same commit. Use to spot 'high audit risk + slow p95' hotspots.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "k6-influxdb"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 63,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "alias": "audit high (linked $testid)",
+          "query": "SELECT last(\"high\") FROM \"audit_summary\" WHERE (\"testid\" =~ /^$testid$/) AND $timeFilter GROUP BY \"testid\"",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          }
+        },
+        {
+          "refId": "B",
+          "alias": "p95 response (ms)",
+          "query": "SELECT percentile(\"value\", 95) FROM \"http_req_duration\" WHERE (\"testid\" =~ /^$testid$/) AND $timeFilter GROUP BY time(30s) fill(null)",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*p95.*"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*audit.*"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "left"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              },
+              {
+                "id": "custom.drawStyle",
+                "value": "bars"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 60
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 204,
+      "type": "table",
+      "title": "Top Files by Finding Count \u2014 Selected Audit",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "k6-influxdb"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 73,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "SELECT sum(\"count\") FROM \"audit_finding\" WHERE (\"audit_id\" =~ /^$audit_id$/) AND $timeFilter GROUP BY \"file\", \"severity\"",
+          "rawQuery": true,
+          "resultFormat": "table",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        },
+        "sortBy": [
+          {
+            "displayName": "sum",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          },
+          "mappings": []
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 205,
+      "type": "stat",
+      "title": "Last Audit Status ($audit_id)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "k6-influxdb"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 73,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "T",
+          "alias": "total",
+          "query": "SELECT last(\"total\") FROM \"audit_summary\" WHERE (\"audit_id\" =~ /^$audit_id$/) AND $timeFilter",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          }
+        },
+        {
+          "refId": "H",
+          "alias": "high",
+          "query": "SELECT last(\"high\") FROM \"audit_summary\" WHERE (\"audit_id\" =~ /^$audit_id$/) AND $timeFilter",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          }
+        },
+        {
+          "refId": "M",
+          "alias": "medium",
+          "query": "SELECT last(\"medium\") FROM \"audit_summary\" WHERE (\"audit_id\" =~ /^$audit_id$/) AND $timeFilter",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          }
+        },
+        {
+          "refId": "D",
+          "alias": "duration_s",
+          "query": "SELECT last(\"duration_s\") FROM \"audit_summary\" WHERE (\"audit_id\" =~ /^$audit_id$/) AND $timeFilter",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "k6-influxdb"
+          }
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "high"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "medium"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "duration_s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "schemaVersion": 38,
+  "tags": [
+    "k6",
+    "performance",
+    "load-testing"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "datasource": {
+          "type": "influxdb",
+          "uid": "k6-influxdb"
+        },
+        "definition": "SHOW TAG VALUES FROM \"http_req_duration\" WITH KEY = \"testid\"",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Test Run",
+        "multi": false,
+        "name": "testid",
+        "options": [],
+        "query": "SHOW TAG VALUES FROM \"http_req_duration\" WITH KEY = \"testid\"",
+        "refresh": 2,
+        "regex": "",
+        "sort": 5,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "influxdb",
+          "uid": "k6-influxdb"
+        },
+        "definition": "SHOW TAG VALUES FROM \"http_req_duration\" WITH KEY = \"testid\"",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Baseline Run",
+        "multi": false,
+        "name": "baseline",
+        "options": [],
+        "query": "SHOW TAG VALUES FROM \"http_req_duration\" WITH KEY = \"testid\"",
+        "refresh": 2,
+        "regex": "",
+        "sort": 5,
+        "type": "query"
+      },
+      {
+        "name": "audit_id",
+        "label": "Audit ID",
+        "type": "query",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "k6-influxdb"
+        },
+        "query": "SHOW TAG VALUES FROM audit_summary WITH KEY = \"audit_id\"",
+        "refresh": 2,
+        "multi": false,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all",
+          "selected": false
+        },
+        "hide": 0,
+        "sort": 2,
+        "regex": "",
+        "definition": "SHOW TAG VALUES FROM audit_summary WITH KEY = \"audit_id\""
+      }
+    ]
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "k6 Performance Dashboard",
+  "uid": "k6-perf",
+  "version": 2
+}

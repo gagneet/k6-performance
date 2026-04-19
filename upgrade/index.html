@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>k6 Performance Portal</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: #2d3152;
+    --accent: #f5a623;
+    --green: #3fb950;
+    --red: #f85149;
+    --blue: #58a6ff;
+    --muted: #7d8590;
+    --text: #e6edf3;
+    --text2: #b3bac5;
+    --font: 'Inter', system-ui, sans-serif;
+    --mono: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; height: 100vh; display: flex; flex-direction: column; }
+
+  /* Top nav */
+  nav { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 20px; height: 52px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  .nav-brand { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 700; color: var(--accent); }
+  .nav-brand svg { width: 24px; height: 24px; }
+  .nav-links { display: flex; gap: 8px; }
+  .nav-links a { color: var(--text2); text-decoration: none; padding: 6px 12px; border-radius: 6px; font-size: 13px; transition: all .15s; }
+  .nav-links a:hover { background: var(--surface2); color: var(--text); }
+  .nav-links a.active { background: var(--surface2); color: var(--text); }
+  .grafana-btn { background: linear-gradient(135deg, #f46800, #e05b00); color: #fff; padding: 6px 14px; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: 600; transition: opacity .15s; }
+  .grafana-btn:hover { opacity: .85; }
+
+  /* Layout */
+  .layout { display: flex; flex: 1; overflow: hidden; }
+  .sidebar { width: 240px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden; }
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+  /* Sidebar */
+  .sidebar-header { padding: 14px 16px 10px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  .script-list { flex: 1; overflow-y: auto; padding: 4px 8px; }
+  .script-item { padding: 8px 10px; border-radius: 6px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; transition: background .12s; }
+  .script-item:hover { background: var(--surface2); }
+  .script-item.selected { background: #1e3a5f; border-left: 3px solid var(--blue); }
+  .script-name { font-size: 13px; font-weight: 500; color: var(--text); }
+  .script-size { font-size: 11px; color: var(--muted); }
+
+  /* Tabs */
+  .tabs { display: flex; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }
+  .tab { padding: 12px 20px; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--muted); border-bottom: 2px solid transparent; transition: all .15s; }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+
+  /* Run panel */
+  .run-panel { padding: 20px; display: flex; gap: 16px; flex-shrink: 0; flex-wrap: wrap; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .field-group { display: flex; flex-direction: column; gap: 5px; }
+  .field-group label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  input, select { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 7px 10px; border-radius: 6px; font-size: 13px; outline: none; font-family: var(--font); transition: border-color .15s; }
+  input:focus, select:focus { border-color: var(--blue); }
+  input[type=number] { width: 80px; }
+  .url-input { width: 260px; }
+  .duration-input { width: 90px; }
+  .run-btn { align-self: flex-end; background: var(--green); color: #fff; border: none; padding: 8px 20px; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; transition: opacity .15s, transform .1s; }
+  .run-btn:hover { opacity: .88; }
+  .run-btn:active { transform: scale(.97); }
+  .run-btn:disabled { background: var(--muted); cursor: not-allowed; }
+  .stop-btn { align-self: flex-end; background: var(--red); color: #fff; border: none; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; display: none; }
+
+  /* Terminal */
+  .terminal-wrap { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+  .terminal-header { padding: 8px 16px; background: #0d1117; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .status-dot.running { background: var(--accent); animation: pulse 1.2s infinite; }
+  .status-dot.passed { background: var(--green); }
+  .status-dot.failed { background: var(--red); }
+  .terminal { flex: 1; overflow-y: auto; padding: 12px 16px; background: #0d1117; font-family: var(--mono); font-size: 12.5px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  /* History panel */
+  .history-panel { flex: 1; overflow: auto; padding: 16px; }
+  .history-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .history-title { font-size: 15px; font-weight: 600; }
+  .refresh-btn { background: var(--surface2); border: 1px solid var(--border); color: var(--text2); padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+  .refresh-btn:hover { color: var(--text); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 8px 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); border-bottom: 1px solid var(--border); }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:hover td { background: var(--surface); }
+  .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+  .badge-running { background: rgba(245,166,35,.15); color: var(--accent); }
+  .badge-passed { background: rgba(63,185,80,.15); color: var(--green); }
+  .badge-failed { background: rgba(248,81,73,.15); color: var(--red); }
+  .badge-aborted { background: rgba(125,133,144,.15); color: var(--muted); }
+  .badge-error { background: rgba(248,81,73,.15); color: var(--red); }
+  .run-link { color: var(--blue); text-decoration: none; font-family: var(--mono); font-size: 12px; }
+  .run-link:hover { text-decoration: underline; }
+  .action-btn { background: var(--surface2); border: 1px solid var(--border); color: var(--text2); padding: 4px 10px; border-radius: 5px; cursor: pointer; font-size: 12px; text-decoration: none; display: inline-block; }
+  .action-btn:hover { color: var(--text); }
+  .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
+  .empty-state p { margin-top: 8px; font-size: 13px; }
+
+  /* Stats bar */
+  .stats-bar { display: flex; gap: 12px; padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; flex-wrap: wrap; }
+  .stat-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; min-width: 110px; }
+  .stat-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  .stat-value { font-size: 18px; font-weight: 700; margin-top: 2px; font-family: var(--mono); }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* page sections */
+  .page { display: none; flex: 1; overflow: hidden; flex-direction: column; }
+  .page.active { display: flex; }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+</head>
+<body>
+
+<nav>
+  <div class="nav-brand">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+    </svg>
+    k6 Performance Portal
+  </div>
+  <div style="display:flex;align-items:center;gap:12px">
+    <div class="nav-links">
+      <a href="#" class="active" onclick="showPage('run',this)">Run Test</a>
+      <a href="#" onclick="showPage('history',this)">History</a>
+      <a href="#" onclick="showPage('audit',this)">Audit</a>
+      <a href="#" onclick="showPage('audits',this)">Audits History</a>
+    </div>
+    <a id="grafana-link" class="grafana-btn" href="#" target="_blank">Open Grafana ↗</a>
+  </div>
+</nav>
+
+<div class="layout">
+  <!-- Sidebar: script list -->
+  <aside class="sidebar">
+    <div class="sidebar-header">Test Scripts</div>
+    <div class="script-list" id="scriptList">
+      <div style="padding:20px;color:var(--muted);font-size:12px">Loading...</div>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <div class="main">
+
+    <!-- Run page -->
+    <div class="page active" id="page-run">
+      <div class="run-panel">
+        <div class="field-group">
+          <label>Script</label>
+          <select id="scriptSelect" onchange="onScriptSelect(this.value)">
+            <option value="">— select —</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label>Virtual Users</label>
+          <input type="number" id="vus" value="10" min="1" max="500">
+        </div>
+        <div class="field-group">
+          <label>Duration</label>
+          <input type="text" id="duration" value="30s" class="duration-input" placeholder="30s">
+        </div>
+        <div class="field-group">
+          <label>Target URL (optional override)</label>
+          <input type="url" id="targetUrl" class="url-input" placeholder="https://example.com">
+        </div>
+        <div class="field-group">
+          <label>Env Vars <span style="font-weight:400;text-transform:none;letter-spacing:0">(KEY=value, one per line)</span></label>
+          <textarea id="envVars" rows="3" placeholder="STRATA_EMAIL=user@example.com&#10;STRATA_PASSWORD=secret&#10;STRATA_BUILDING_ID=13195" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:12px;font-family:var(--mono);resize:vertical;width:320px;outline:none;transition:border-color .15s" onfocus="this.style.borderColor='var(--blue)'" onblur="this.style.borderColor='var(--border)'"></textarea>
+        </div>
+        <button class="run-btn" id="runBtn" onclick="startRun()">▶ Run Test</button>
+        <button class="stop-btn" id="stopBtn" onclick="stopRun()">■ Stop</button>
+      </div>
+
+      <div class="stats-bar" id="statsBar" style="display:none">
+        <div class="stat-card">
+          <div class="stat-label">VUs</div>
+          <div class="stat-value" id="stat-vus">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Status</div>
+          <div class="stat-value" id="stat-status" style="font-size:13px;margin-top:6px">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Run ID</div>
+          <div class="stat-value" id="stat-id" style="font-size:13px;font-family:var(--mono);margin-top:6px">—</div>
+        </div>
+      </div>
+
+      <div class="terminal-wrap">
+        <div class="terminal-header">
+          <div class="status-dot" id="statusDot"></div>
+          <span id="terminalLabel">Select a script and click Run</span>
+          <span style="margin-left:auto;font-size:11px" id="grafanaRunLink"></span>
+        </div>
+        <div class="terminal" id="terminal">
+          <span style="color:var(--muted)">Waiting for test run...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- History page -->
+    <div class="page" id="page-history">
+      <div class="history-panel">
+        <div class="history-header">
+          <div class="history-title">Test Run History</div>
+          <button class="refresh-btn" onclick="loadHistory()">↻ Refresh</button>
+        </div>
+        <div id="historyContent">
+          <div class="empty-state">Loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Audit page (start a new audit) -->
+    <div class="page" id="page-audit">
+      <div class="run-panel">
+        <div class="field-group">
+          <label>Backend</label>
+          <select id="auditBackend" onchange="onAuditBackendChange()">
+            <option value="ralph">Ralph (fast, cheap)</option>
+            <option value="repolens">RepoLens (280 lenses, $$$)</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label>Target Repo</label>
+          <select id="auditTarget" style="min-width:220px">
+            <option value="">— loading —</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label>Agent CLI</label>
+          <select id="auditAgent">
+            <option value="claude">claude</option>
+            <option value="codex">codex</option>
+            <option value="opencode">opencode</option>
+          </select>
+        </div>
+        <div class="field-group" id="ralphScopeBox">
+          <label>Max Batch Bytes</label>
+          <input type="number" id="auditBatchBytes" value="90000" min="10000" max="500000" style="width:110px">
+        </div>
+        <div class="field-group" id="ralphScopeBox2">
+          <label>Max Iterations</label>
+          <input type="number" id="auditMaxIter" value="50" min="1" max="500" style="width:110px">
+        </div>
+        <div class="field-group" id="repolensScopeBox" style="display:none">
+          <label>Focus (lens id, optional)</label>
+          <input type="text" id="auditFocus" placeholder="e.g. injection" style="width:180px">
+        </div>
+        <div class="field-group" id="repolensScopeBox2" style="display:none">
+          <label>Domain (optional)</label>
+          <input type="text" id="auditDomain" placeholder="e.g. security" style="width:160px">
+        </div>
+        <div class="field-group" id="repolensScopeBox3" style="display:none">
+          <label>Max Cost ($)</label>
+          <input type="number" id="auditMaxCost" value="20" min="1" max="200" style="width:90px">
+        </div>
+        <div class="field-group">
+          <label>Link to k6 Run (optional)</label>
+          <select id="auditLinkRun" style="min-width:180px">
+            <option value="">— auto by commit SHA —</option>
+          </select>
+        </div>
+        <button class="run-btn" id="auditRunBtn" onclick="startAudit()">▶ Run Audit</button>
+        <button class="stop-btn" id="auditStopBtn" onclick="stopAudit()">■ Stop</button>
+      </div>
+
+      <div class="stats-bar" id="auditStatsBar" style="display:none">
+        <div class="stat-card">
+          <div class="stat-label">Backend</div>
+          <div class="stat-value" id="astat-backend" style="font-size:13px;margin-top:6px">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Status</div>
+          <div class="stat-value" id="astat-status" style="font-size:13px;margin-top:6px">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Audit ID</div>
+          <div class="stat-value" id="astat-id" style="font-size:13px;font-family:var(--mono);margin-top:6px">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">High / Med / Low</div>
+          <div class="stat-value" id="astat-findings" style="font-size:14px;margin-top:6px">—</div>
+        </div>
+      </div>
+
+      <div class="terminal-wrap">
+        <div class="terminal-header">
+          <div class="status-dot" id="auditStatusDot"></div>
+          <span id="auditTerminalLabel">Pick a target and click Run Audit</span>
+          <span style="margin-left:auto;font-size:11px" id="auditGrafanaLink"></span>
+        </div>
+        <div class="terminal" id="auditTerminal">
+          <span style="color:var(--muted)">Waiting for audit...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Audits history page -->
+    <div class="page" id="page-audits">
+      <div class="history-panel">
+        <div class="history-header">
+          <div class="history-title">Audit History</div>
+          <button class="refresh-btn" onclick="loadAudits()">↻ Refresh</button>
+        </div>
+        <div id="auditsContent">
+          <div class="empty-state">Loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Audit detail modal -->
+    <div id="auditDetailModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;align-items:center;justify-content:center">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;width:min(1100px,92vw);max-height:88vh;display:flex;flex-direction:column">
+        <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+          <div style="font-size:15px;font-weight:600" id="auditDetailTitle">Audit</div>
+          <button class="refresh-btn" onclick="closeAuditDetail()">✕ Close</button>
+        </div>
+        <div style="overflow:auto;padding:16px 18px" id="auditDetailBody"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+let currentRunId = null;
+let ws = null;
+let grafanaUrl = '';
+
+// ── init ──────────────────────────────────────────────────────────────────────
+
+async function init() {
+  try {
+    const cfg = await fetch('/api/config').then(r => r.json());
+    grafanaUrl = cfg.grafana_url;
+    document.getElementById('grafana-link').href = grafanaUrl;
+  } catch(e) {}
+  await loadScripts();
+}
+
+// ── scripts ───────────────────────────────────────────────────────────────────
+
+async function loadScripts() {
+  const list = await fetch('/api/scripts').then(r => r.json()).catch(() => []);
+  const el = document.getElementById('scriptList');
+  const sel = document.getElementById('scriptSelect');
+
+  el.innerHTML = '';
+  sel.innerHTML = '<option value="">— select —</option>';
+
+  if (!list.length) {
+    el.innerHTML = '<div style="padding:16px;color:var(--muted);font-size:12px">No .js scripts found in /scripts</div>';
+    return;
+  }
+  list.forEach(s => {
+    const item = document.createElement('div');
+    item.className = 'script-item';
+    item.dataset.name = s.name;
+    item.innerHTML = `<div class="script-name">${s.name}</div><div class="script-size">${formatBytes(s.size)}</div>`;
+    item.onclick = () => selectScript(s.name);
+    el.appendChild(item);
+
+    const opt = document.createElement('option');
+    opt.value = s.name;
+    opt.textContent = s.name;
+    sel.appendChild(opt);
+  });
+}
+
+function selectScript(name) {
+  document.querySelectorAll('.script-item').forEach(el => {
+    el.classList.toggle('selected', el.dataset.name === name);
+  });
+  document.getElementById('scriptSelect').value = name;
+}
+
+function onScriptSelect(name) {
+  selectScript(name);
+}
+
+// ── run ───────────────────────────────────────────────────────────────────────
+
+async function startRun() {
+  const script = document.getElementById('scriptSelect').value;
+  if (!script) { alert('Please select a script.'); return; }
+
+  // Parse KEY=value textarea into a plain object
+  const envVars = {};
+  document.getElementById('envVars').value.split('\n').forEach(line => {
+    const idx = line.indexOf('=');
+    if (idx > 0) {
+      const k = line.slice(0, idx).trim();
+      const v = line.slice(idx + 1).trim();
+      if (k) envVars[k] = v;
+    }
+  });
+
+  const req = {
+    script,
+    vus: parseInt(document.getElementById('vus').value) || 10,
+    duration: document.getElementById('duration').value || '30s',
+    target_url: document.getElementById('targetUrl').value || null,
+    env_vars: envVars,
+  };
+
+  setRunning(true);
+  clearTerminal();
+  document.getElementById('statsBar').style.display = 'flex';
+  document.getElementById('stat-vus').textContent = req.vus;
+
+  const res = await fetch('/api/runs', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(req),
+  }).then(r => r.json()).catch(e => ({error: String(e)}));
+
+  if (res.error) {
+    appendTerminal(`\nError: ${res.error}`, 'var(--red)');
+    setRunning(false);
+    return;
+  }
+
+  currentRunId = res.run_id;
+  document.getElementById('stat-id').textContent = currentRunId;
+  document.getElementById('stat-status').textContent = 'Running';
+  setDot('running');
+  document.getElementById('terminalLabel').textContent = `Run ${currentRunId} — ${script}`;
+
+  const grafanaLink = `${grafanaUrl}/d/k6-perf/k6-performance-dashboard?var-testid=${currentRunId}&from=now-10m&to=now`;
+  document.getElementById('grafanaRunLink').innerHTML =
+    `<a href="${grafanaLink}" target="_blank" style="color:var(--blue);text-decoration:none">View in Grafana ↗</a>`;
+
+  connectWS(currentRunId);
+}
+
+async function stopRun() {
+  if (!currentRunId) return;
+  await fetch(`/api/runs/${currentRunId}/stop`, {method: 'DELETE'});
+  appendTerminal('\n[Aborted by user]', 'var(--red)');
+  setRunning(false);
+  setDot('failed');
+}
+
+function connectWS(runId) {
+  if (ws) ws.close();
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws/${runId}`);
+
+  ws.onmessage = e => {
+    const data = e.data;
+    if (data.startsWith('__DONE__:')) {
+      const status = data.split(':')[1];
+      setRunning(false);
+      setDot(status);
+      document.getElementById('stat-status').textContent = status.charAt(0).toUpperCase() + status.slice(1);
+      return;
+    }
+    appendTerminalRaw(data);
+  };
+  ws.onerror = () => appendTerminal('\n[WebSocket error]', 'var(--red)');
+}
+
+// ── terminal ──────────────────────────────────────────────────────────────────
+
+function clearTerminal() {
+  document.getElementById('terminal').innerHTML = '';
+}
+
+function appendTerminal(text, color='') {
+  const t = document.getElementById('terminal');
+  const span = document.createElement('span');
+  if (color) span.style.color = color;
+  span.textContent = text;
+  t.appendChild(span);
+  t.scrollTop = t.scrollHeight;
+}
+
+function appendTerminalRaw(text) {
+  const t = document.getElementById('terminal');
+  const colored = ansiToHtml(text);
+  const div = document.createElement('div');
+  div.innerHTML = colored;
+  t.appendChild(div);
+  t.scrollTop = t.scrollHeight;
+}
+
+// minimal ANSI color stripping / mapping
+function ansiToHtml(str) {
+  const ansi = {
+    '32': '#3fb950', '31': '#f85149', '33': '#f5a623',
+    '34': '#58a6ff', '35': '#bc8cff', '36': '#39c5cf',
+    '0':  '', '1': '', '90': '#7d8590',
+  };
+  str = str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  str = str.replace(/\x1b\[(\d+)m/g, (_, code) => {
+    const col = ansi[code];
+    return col === undefined ? '' : col ? `<span style="color:${col}">` : '</span>';
+  });
+  return str;
+}
+
+// ── history ───────────────────────────────────────────────────────────────────
+
+async function loadHistory() {
+  const runs = await fetch('/api/runs').then(r => r.json()).catch(() => []);
+  const el = document.getElementById('historyContent');
+
+  if (!runs.length) {
+    el.innerHTML = '<div class="empty-state"><div style="font-size:40px">📊</div><p>No test runs yet. Select a script and click Run.</p></div>';
+    return;
+  }
+
+  const rows = runs.map(r => {
+    const dur = r.finished_at
+      ? Math.round((new Date(r.finished_at) - new Date(r.started_at)) / 1000) + 's'
+      : '—';
+    const grafanaLink = r.started_at
+      ? `${grafanaUrl}/d/k6-perf/k6-performance-dashboard?var-testid=${r.id}&from=${encodeURIComponent(r.started_at + 'Z')}&to=${encodeURIComponent((r.finished_at || new Date().toISOString()) + 'Z')}`
+      : '#';
+    return `<tr>
+      <td><a class="run-link" href="#" onclick="replayRun('${r.id}')">${r.id}</a></td>
+      <td>${r.script}</td>
+      <td><span class="badge badge-${r.status}">${r.status}</span></td>
+      <td>${r.vus ?? '—'}</td>
+      <td>${r.duration ?? '—'}</td>
+      <td>${dur}</td>
+      <td style="color:var(--muted);font-size:12px">${r.started_at ? r.started_at.replace('T',' ').slice(0,19) : '—'}</td>
+      <td>
+        <a class="action-btn" href="${grafanaLink}" target="_blank">Grafana ↗</a>
+        <a class="action-btn" href="#" onclick="viewOutput('${r.id}')">Output</a>
+      </td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `<table>
+    <thead><tr>
+      <th>Run ID</th><th>Script</th><th>Status</th><th>VUs</th><th>Duration</th><th>Elapsed</th><th>Started</th><th>Actions</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+async function viewOutput(runId) {
+  showPage('run', document.querySelector('.nav-links a'));
+  clearTerminal();
+  document.getElementById('statsBar').style.display = 'none';
+  document.getElementById('terminalLabel').textContent = `Output — run ${runId}`;
+  const data = await fetch(`/api/runs/${runId}`).then(r => r.json());
+  if (data.output) appendTerminalRaw(data.output);
+  setDot(data.status);
+}
+
+function replayRun(runId) {
+  // just switch to run tab; user can adjust params
+  showPage('run', document.querySelector('.nav-links a'));
+}
+
+// ── UI helpers ────────────────────────────────────────────────────────────────
+
+function setRunning(running) {
+  document.getElementById('runBtn').disabled = running;
+  document.getElementById('stopBtn').style.display = running ? 'block' : 'none';
+}
+
+function setDot(status) {
+  const dot = document.getElementById('statusDot');
+  dot.className = 'status-dot ' + (status || '');
+}
+
+function showPage(name, linkEl) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  document.querySelectorAll('.nav-links a').forEach(a => a.classList.remove('active'));
+  if (linkEl) linkEl.classList.add('active');
+  if (name === 'history') loadHistory();
+  if (name === 'audit') loadAuditTargets();
+  if (name === 'audits') loadAudits();
+}
+
+function formatBytes(b) {
+  if (b < 1024) return b + ' B';
+  return (b / 1024).toFixed(1) + ' KB';
+}
+
+// ── audit: start / stream / history ─────────────────────────────────────────
+
+let currentAuditId = null;
+let auditWs = null;
+
+async function loadAuditTargets() {
+  // Backends
+  try {
+    const backends = await fetch('/api/audit/backends').then(r => r.json());
+    const sel = document.getElementById('auditBackend');
+    for (const opt of sel.options) {
+      const k = opt.value;
+      if (backends[k] && !backends[k].available) {
+        opt.text = opt.text + ' (not installed)';
+        opt.disabled = true;
+      }
+    }
+  } catch {}
+
+  // Targets
+  try {
+    const targets = await fetch('/api/audit/targets').then(r => r.json());
+    const sel = document.getElementById('auditTarget');
+    if (!targets.length) {
+      sel.innerHTML = '<option value="">— no repos mounted —</option>';
+    } else {
+      sel.innerHTML = targets.map(t => {
+        const sha = t.commit_sha ? ` @${t.commit_sha.slice(0,7)}` : ' (no git)';
+        return `<option value="${t.name}">${t.name}${sha}</option>`;
+      }).join('');
+    }
+  } catch {
+    document.getElementById('auditTarget').innerHTML = '<option value="">— error —</option>';
+  }
+
+  // Link-to-run dropdown (k6 runs from the last 50)
+  try {
+    const runs = await fetch('/api/runs?limit=50').then(r => r.json());
+    const sel = document.getElementById('auditLinkRun');
+    sel.innerHTML = '<option value="">— auto by commit SHA —</option>' +
+      runs.map(r => `<option value="${r.id}">${r.id} · ${r.script} · ${r.status}</option>`).join('');
+  } catch {}
+
+  onAuditBackendChange();
+}
+
+function onAuditBackendChange() {
+  const backend = document.getElementById('auditBackend').value;
+  const ralphBoxes = ['ralphScopeBox', 'ralphScopeBox2'];
+  const repolensBoxes = ['repolensScopeBox', 'repolensScopeBox2', 'repolensScopeBox3'];
+  ralphBoxes.forEach(id => document.getElementById(id).style.display = backend === 'ralph' ? '' : 'none');
+  repolensBoxes.forEach(id => document.getElementById(id).style.display = backend === 'repolens' ? '' : 'none');
+}
+
+async function startAudit() {
+  const backend = document.getElementById('auditBackend').value;
+  const target = document.getElementById('auditTarget').value;
+  const agent = document.getElementById('auditAgent').value;
+  const linkedRunId = document.getElementById('auditLinkRun').value || null;
+
+  if (!target) { alert('Pick a target repo first'); return; }
+
+  const scope = {};
+  if (backend === 'ralph') {
+    scope.max_batch_bytes = parseInt(document.getElementById('auditBatchBytes').value || '90000', 10);
+    scope.max_iterations = parseInt(document.getElementById('auditMaxIter').value || '50', 10);
+  } else {
+    const focus = document.getElementById('auditFocus').value.trim();
+    const domain = document.getElementById('auditDomain').value.trim();
+    const cost = parseFloat(document.getElementById('auditMaxCost').value || '20');
+    if (focus) scope.focus = focus;
+    if (domain) scope.domain = domain;
+    scope.max_cost = cost;
+    // RepoLens parallel is off by default — operator flips via env_vars for now.
+  }
+
+  // Cost warning for repolens
+  if (backend === 'repolens' && !scope.focus && !scope.domain) {
+    if (!confirm('RepoLens full audit can cost hundreds of dollars. Continue without --focus or --domain?')) return;
+  }
+
+  setAuditRunning(true);
+  clearAuditTerminal();
+  document.getElementById('auditStatsBar').style.display = 'flex';
+  document.getElementById('astat-backend').textContent = backend;
+  document.getElementById('astat-status').textContent = 'starting';
+  document.getElementById('astat-findings').textContent = '—';
+
+  try {
+    const res = await fetch('/api/audits', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({backend, target, agent, scope, linked_run_id: linkedRunId, env_vars: {}}),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      appendAuditTerminal(`[error] ${err}\n`, 'var(--red)');
+      setAuditRunning(false);
+      return;
+    }
+    const data = await res.json();
+    currentAuditId = data.audit_id;
+    document.getElementById('astat-id').textContent = data.audit_id;
+    document.getElementById('auditTerminalLabel').textContent = `Audit ${data.audit_id} — streaming...`;
+    setAuditDot('running');
+    connectAuditWS(data.audit_id);
+  } catch (exc) {
+    appendAuditTerminal(`[error] ${exc}\n`, 'var(--red)');
+    setAuditRunning(false);
+  }
+}
+
+async function stopAudit() {
+  if (!currentAuditId) return;
+  await fetch(`/api/audits/${currentAuditId}/stop`, {method: 'DELETE'}).catch(() => {});
+}
+
+function connectAuditWS(auditId) {
+  if (auditWs) auditWs.close();
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  auditWs = new WebSocket(`${proto}://${location.host}/ws/${auditId}`);
+  auditWs.onmessage = e => {
+    const msg = e.data;
+    if (msg.startsWith('\n__DONE__:') || msg.startsWith('__DONE__:')) {
+      const status = msg.replace(/.*__DONE__:/, '').trim();
+      setAuditDot(status);
+      document.getElementById('astat-status').textContent = status;
+      document.getElementById('auditTerminalLabel').textContent = `Audit ${auditId} — ${status}`;
+      setAuditRunning(false);
+      // Pull the final summary
+      fetch(`/api/audits/${auditId}`).then(r => r.json()).then(d => {
+        const s = d.summary || {};
+        document.getElementById('astat-findings').textContent =
+          `${s.high ?? 0} / ${s.medium ?? 0} / ${s.low ?? 0}`;
+      }).catch(() => {});
+      return;
+    }
+    appendAuditTerminalRaw(msg);
+  };
+  auditWs.onerror = () => appendAuditTerminal('\n[WebSocket error]\n', 'var(--red)');
+}
+
+function clearAuditTerminal() {
+  document.getElementById('auditTerminal').innerHTML = '';
+}
+function appendAuditTerminal(text, color) {
+  const t = document.getElementById('auditTerminal');
+  const span = document.createElement('span');
+  if (color) span.style.color = color;
+  span.textContent = text;
+  t.appendChild(span);
+  t.scrollTop = t.scrollHeight;
+}
+function appendAuditTerminalRaw(text) {
+  const t = document.getElementById('auditTerminal');
+  t.insertAdjacentHTML('beforeend', ansiToHtml(text));
+  t.scrollTop = t.scrollHeight;
+}
+function setAuditRunning(running) {
+  document.getElementById('auditRunBtn').disabled = running;
+  document.getElementById('auditStopBtn').style.display = running ? 'block' : 'none';
+}
+function setAuditDot(status) {
+  const dot = document.getElementById('auditStatusDot');
+  dot.className = 'status-dot ' + (status || '');
+}
+
+// ── audits history ──────────────────────────────────────────────────────────
+
+async function loadAudits() {
+  const audits = await fetch('/api/audits').then(r => r.json()).catch(() => []);
+  const el = document.getElementById('auditsContent');
+  if (!audits.length) {
+    el.innerHTML = '<div class="empty-state"><div style="font-size:40px">🔍</div><p>No audits yet. Start one from the Audit tab.</p></div>';
+    return;
+  }
+  const rows = audits.map(a => {
+    const s = a.summary || {};
+    const sevBadges = [
+      s.high  ? `<span class="badge badge-failed">H ${s.high}</span>`    : '',
+      s.medium? `<span class="badge badge-running">M ${s.medium}</span>` : '',
+      s.low   ? `<span class="badge badge-aborted">L ${s.low}</span>`    : '',
+    ].filter(Boolean).join(' ') || '<span style="color:var(--muted)">—</span>';
+    const dur = a.finished_at
+      ? Math.round((new Date(a.finished_at) - new Date(a.started_at)) / 1000) + 's'
+      : '—';
+    const sha = a.commit_sha ? `<code style="font-family:var(--mono);color:var(--text2)">${a.commit_sha.slice(0,7)}</code>` : '<span style="color:var(--muted)">—</span>';
+    const linked = a.linked_run_id
+      ? `<a class="run-link" href="#" onclick="showPage('history',document.querySelectorAll('.nav-links a')[1]);return false">${a.linked_run_id}</a>`
+      : '<span style="color:var(--muted)">—</span>';
+    return `<tr>
+      <td><a class="run-link" href="#" onclick="viewAuditDetail('${a.id}');return false">${a.id}</a></td>
+      <td>${a.backend}</td>
+      <td>${a.target_name || '—'}</td>
+      <td>${sha}</td>
+      <td><span class="badge badge-${a.status}">${a.status}</span></td>
+      <td>${sevBadges}</td>
+      <td>${linked}</td>
+      <td style="color:var(--muted);font-size:12px">${a.started_at ? a.started_at.replace('T',' ').slice(0,19) : '—'}</td>
+      <td>${dur}</td>
+    </tr>`;
+  }).join('');
+  el.innerHTML = `<table>
+    <thead><tr>
+      <th>Audit ID</th><th>Backend</th><th>Target</th><th>Commit</th><th>Status</th>
+      <th>Findings (H/M/L)</th><th>Linked k6 Run</th><th>Started</th><th>Elapsed</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+async function viewAuditDetail(auditId) {
+  const modal = document.getElementById('auditDetailModal');
+  const body = document.getElementById('auditDetailBody');
+  const title = document.getElementById('auditDetailTitle');
+  modal.style.display = 'flex';
+  body.innerHTML = '<div class="empty-state">Loading...</div>';
+  title.textContent = `Audit ${auditId}`;
+
+  let d;
+  try {
+    d = await fetch(`/api/audits/${auditId}`).then(r => r.json());
+  } catch {
+    body.innerHTML = '<div class="empty-state">Failed to load.</div>';
+    return;
+  }
+  const s = d.summary || {};
+  const findings = d.findings || [];
+
+  const sevCell = v => {
+    if (v === 'high') return '<span class="badge badge-failed">high</span>';
+    if (v === 'medium') return '<span class="badge badge-running">medium</span>';
+    if (v === 'low') return '<span class="badge badge-aborted">low</span>';
+    return `<span class="badge badge-aborted">${v}</span>`;
+  };
+
+  const findingsTable = findings.length
+    ? `<table style="margin-top:10px">
+         <thead><tr>
+           <th>Severity</th><th>Type</th><th>File</th><th>Lines</th><th>Message</th><th>Conf.</th>
+         </tr></thead>
+         <tbody>${findings.map(f => `
+           <tr>
+             <td>${sevCell(f.severity)}</td>
+             <td style="font-size:12px">${f.finding_type}</td>
+             <td style="font-family:var(--mono);font-size:12px">${f.file || '—'}</td>
+             <td style="font-family:var(--mono);font-size:12px">${f.line_range || '—'}</td>
+             <td style="max-width:520px">${escapeHtml(f.message || '')}</td>
+             <td style="font-size:12px">${f.confidence}${f.parse_confidence < 0.8 ? ' <span title="heuristic parse" style="color:var(--muted)">~</span>' : ''}</td>
+           </tr>`).join('')}
+         </tbody>
+       </table>`
+    : '<div class="empty-state">No structured findings parsed from this audit.</div>';
+
+  const linkRow = `
+    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px;font-size:13px">
+      <div><span style="color:var(--muted)">Backend:</span> ${d.backend}</div>
+      <div><span style="color:var(--muted)">Target:</span> <code style="font-family:var(--mono)">${d.target_name || d.target || '—'}</code></div>
+      <div><span style="color:var(--muted)">Commit:</span> <code style="font-family:var(--mono)">${d.commit_sha || '—'}</code></div>
+      <div><span style="color:var(--muted)">Status:</span> <span class="badge badge-${d.status}">${d.status}</span></div>
+      <div><span style="color:var(--muted)">Linked k6 Run:</span>
+        ${d.linked_run_id ? `<code style="font-family:var(--mono)">${d.linked_run_id}</code>` : '—'}
+        <button class="action-btn" style="margin-left:6px" onclick="promptLinkRun('${d.id}')">Link…</button>
+      </div>
+    </div>`;
+
+  const summaryRow = `
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+      <div class="stat-card"><div class="stat-label">Total</div><div class="stat-value">${s.total ?? 0}</div></div>
+      <div class="stat-card"><div class="stat-label">High</div><div class="stat-value" style="color:var(--red)">${s.high ?? 0}</div></div>
+      <div class="stat-card"><div class="stat-label">Medium</div><div class="stat-value" style="color:var(--accent)">${s.medium ?? 0}</div></div>
+      <div class="stat-card"><div class="stat-label">Low</div><div class="stat-value" style="color:var(--text2)">${s.low ?? 0}</div></div>
+      <div class="stat-card"><div class="stat-label">Files scanned</div><div class="stat-value">${s.files_scanned ?? 0}</div></div>
+      <div class="stat-card"><div class="stat-label">Iterations</div><div class="stat-value">${s.iterations ?? 0}</div></div>
+    </div>`;
+
+  const grafanaBtn = d.commit_sha
+    ? `<a class="action-btn" target="_blank" href="${grafanaUrl}/d/k6-perf/k6-performance-dashboard?var-audit_id=${d.id}${d.linked_run_id ? '&var-testid=' + d.linked_run_id : ''}">Open in Grafana ↗</a>`
+    : '';
+
+  body.innerHTML = linkRow + summaryRow +
+    `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><h3 style="font-size:14px">Findings</h3>${grafanaBtn}</div>` +
+    findingsTable;
+}
+
+function closeAuditDetail() {
+  document.getElementById('auditDetailModal').style.display = 'none';
+}
+
+async function promptLinkRun(auditId) {
+  const runId = prompt('k6 run id to link (leave blank to cancel):');
+  if (!runId) return;
+  const res = await fetch(`/api/audits/${auditId}/link`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({run_id: runId.trim()}),
+  });
+  if (res.ok) { viewAuditDetail(auditId); loadAudits(); }
+  else alert('Link failed: ' + (await res.text()));
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, ch => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  })[ch]);
+}
+
+init();
+</script>
+</body>
+</html>
